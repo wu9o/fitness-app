@@ -48,6 +48,11 @@ final class LocationManager: NSObject, ObservableObject {
         }
     }
 
+    func currentElapsedTime(at date: Date = Date()) -> TimeInterval {
+        guard let startedAt else { return 0 }
+        return max(0, date.timeIntervalSince(startedAt))
+    }
+
     func finish() {
         isRecording = false
         isPaused = false

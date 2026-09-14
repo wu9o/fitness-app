@@ -40,6 +40,91 @@ struct SavedRoute: Codable, Identifiable {
     }
 }
 
+enum ActivityType: String, Codable, CaseIterable, Identifiable {
+    case run
+    case ride
+    case stretch
+    case strength
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .run: "跑步"
+        case .ride: "骑行"
+        case .stretch: "拉伸"
+        case .strength: "力量"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .run: "figure.run"
+        case .ride: "figure.outdoor.cycle"
+        case .stretch: "figure.flexibility"
+        case .strength: "figure.strengthtraining.traditional"
+        }
+    }
+
+    var usesLocation: Bool {
+        self == .run || self == .ride
+    }
+}
+
+struct WorkoutRecord: Codable, Identifiable {
+    let id: UUID
+    let activity: ActivityType
+    let date: Date
+    let duration: TimeInterval
+    let distance: Double
+
+    var durationText: String {
+        let totalSeconds = max(0, Int(duration.rounded()))
+        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+
+    var distanceText: String {
+        activity.usesLocation ? String(format: "%.2f km", distance / 1000) : "—"
+    }
+}
+
+@MainActor
+final class WorkoutStore: ObservableObject {
+    @Published private(set) var records: [WorkoutRecord] = []
+
+    private let fileURL: URL
+
+    init() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MoveLog", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        fileURL = directory.appendingPathComponent("workouts.json")
+        load()
+    }
+
+    func save(activity: ActivityType, duration: TimeInterval, distance: Double) {
+        let record = WorkoutRecord(
+            id: UUID(),
+            activity: activity,
+            date: Date(),
+            duration: duration,
+            distance: distance
+        )
+        records.insert(record, at: 0)
+        persist()
+    }
+
+    private func load() {
+        guard let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode([WorkoutRecord].self, from: data) else { return }
+        records = decoded
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(records) else { return }
+        try? data.write(to: fileURL, options: [.atomic])
+    }
+}
+
 @MainActor
 final class RouteStore: ObservableObject {
     @Published private(set) var routes: [SavedRoute] = []
@@ -98,6 +183,40 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .health: "heart.fill"
         case .routes: "map.fill"
         case .learn: "book.fill"
+        }
+    }
+}
+
+enum RouteFilter: String, CaseIterable, Identifiable {
+    case recommended
+    case nearby
+    case mine
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recommended: "推荐"
+        case .nearby: "附近"
+        case .mine: "我的"
+        }
+    }
+}
+
+enum LearnCategory: String, CaseIterable, Identifiable {
+    case run
+    case ride
+    case stretch
+    case strength
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .run: "跑步"
+        case .ride: "骑行"
+        case .stretch: "拉伸"
+        case .strength: "力量"
         }
     }
 }

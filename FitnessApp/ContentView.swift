@@ -5,16 +5,18 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .home
     @StateObject private var locationManager = LocationManager()
     @StateObject private var routeStore = RouteStore()
+    @StateObject private var workoutStore = WorkoutStore()
     @StateObject private var healthKit = HealthKitManager()
+    @State private var selectedActivity: ActivityType = .run
 
     var body: some View {
         VStack(spacing: 0) {
             Group {
                 switch selectedTab {
-                case .home: HomeView(onStart: startActivity, routeStore: routeStore, healthKit: healthKit)
-                case .activity: ActivityView(locationManager: locationManager, routeStore: routeStore, onStart: startActivity)
+                case .home: HomeView(onStart: openActivity, routeStore: routeStore, workoutStore: workoutStore, healthKit: healthKit)
+                case .activity: ActivityView(selectedActivity: $selectedActivity, locationManager: locationManager, routeStore: routeStore, workoutStore: workoutStore, onStart: startSelectedActivity)
                 case .health: HealthView(healthKit: healthKit)
-                case .routes: RoutesView(routeStore: routeStore, onFollow: startActivity)
+                case .routes: RoutesView(routeStore: routeStore, onFollow: { startActivity(.run) })
                 case .learn: LearnView()
                 }
             }
@@ -27,8 +29,16 @@ struct ContentView: View {
         .tint(Color.appCoral)
     }
 
-    private func startActivity() {
+    private func openActivity() {
         selectedTab = .activity
+    }
+
+    private func startSelectedActivity() {
+        startActivity(selectedActivity)
+    }
+
+    private func startActivity(_ activity: ActivityType) {
+        selectedActivity = activity
         locationManager.start()
     }
 }
@@ -63,6 +73,7 @@ struct BottomBar: View {
 struct HomeView: View {
     let onStart: () -> Void
     @ObservedObject var routeStore: RouteStore
+    @ObservedObject var workoutStore: WorkoutStore
     @ObservedObject var healthKit: HealthKitManager
 
     var body: some View {
@@ -105,7 +116,12 @@ struct HomeView: View {
 
                     HStack(spacing: 12) {
                         HomeMetric(title: "昨晚睡眠", value: "7h 32m", note: "睡得不错", color: Color.appMint)
-                        HomeMetric(title: "本周运动", value: "18.4 km", note: "比上周 +12%", color: Color.appLemon.opacity(0.65))
+                        NavigationLink {
+                            WorkoutHistoryView(store: workoutStore)
+                        } label: {
+                            HomeMetric(title: "本周运动", value: "18.4 km", note: "查看全部记录", color: Color.appLemon.opacity(0.65))
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
@@ -180,91 +196,135 @@ struct HomeMetric: View {
 }
 
 struct ActivityView: View {
+    @Binding var selectedActivity: ActivityType
     @ObservedObject var locationManager: LocationManager
     @ObservedObject var routeStore: RouteStore
+    @ObservedObject var workoutStore: WorkoutStore
     let onStart: () -> Void
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                Map(initialPosition: .region(DemoRoute.region), interactionModes: []) {
-                    MapPolyline(coordinates: locationManager.route.isEmpty ? DemoRoute.coordinates : locationManager.route)
-                        .stroke(Color.appBlue, lineWidth: 6)
-                    Annotation("当前位置", coordinate: locationManager.route.last ?? DemoRoute.coordinates[3]) {
-                        Circle().fill(Color.appBlue).frame(width: 18, height: 18).overlay(Circle().stroke(.white, lineWidth: 4))
+                if selectedActivity.usesLocation {
+                    Map(initialPosition: .region(DemoRoute.region), interactionModes: []) {
+                        if !locationManager.isRecording || !locationManager.route.isEmpty {
+                            MapPolyline(coordinates: locationManager.route.isEmpty ? DemoRoute.coordinates : locationManager.route)
+                                .stroke(Color.appBlue, lineWidth: 6)
+                        }
+                        Annotation("当前位置", coordinate: locationManager.route.last ?? DemoRoute.coordinates[3]) {
+                            Circle().fill(Color.appBlue).frame(width: 18, height: 18).overlay(Circle().stroke(.white, lineWidth: 4))
+                        }
                     }
+                    .ignoresSafeArea(edges: .top)
+                } else {
+                    Color.appPaper.ignoresSafeArea()
                 }
-                .ignoresSafeArea(edges: .top)
 
                 VStack(spacing: 14) {
                     HStack {
-                        Label("GPS 良好", systemImage: "location.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.appInk)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
-                            .background(.white.opacity(0.94), in: Capsule())
+                        if selectedActivity.usesLocation {
+                            Label("GPS 良好", systemImage: "location.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.appInk)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .background(.white.opacity(0.94), in: Capsule())
+                        } else {
+                            Label("室内训练", systemImage: "figure.strengthtraining.functional")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.appInk)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .background(.white.opacity(0.94), in: Capsule())
+                        }
                         Spacer()
-                        Text("跑步")
+                        Text(selectedActivity.title)
                             .font(.system(size: 13, weight: .bold))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 9)
                             .background(.white.opacity(0.94), in: Capsule())
                     }
 
+                    if !locationManager.isRecording {
+                        ActivityTypePicker(selection: $selectedActivity)
+                    }
+
                     Group {
-                    if locationManager.isRecording {
-                        VStack(spacing: 18) {
-                            Text(String(format: "%.2f km", locationManager.distance / 1000))
-                                .font(.system(size: 50, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appInk)
-                            HStack {
-                                ActivityMetric(title: "用时", value: "32:18")
-                                ActivityMetric(title: "平均配速", value: "6'09''")
-                                ActivityMetric(title: "心率", value: "142")
+                        if locationManager.isRecording {
+                            VStack(spacing: 18) {
+                                if selectedActivity.usesLocation {
+                                    Text(String(format: "%.2f km", locationManager.distance / 1000))
+                                        .font(.system(size: 50, weight: .bold, design: .rounded))
+                                        .foregroundStyle(Color.appInk)
+                                } else {
+                                    Image(systemName: selectedActivity.icon)
+                                        .font(.system(size: 44))
+                                        .foregroundStyle(Color.appCoral)
+                                }
+                                HStack {
+                                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                                        ActivityMetric(title: "用时", value: durationText(for: locationManager.currentElapsedTime(at: context.date)))
+                                    }
+                                    if selectedActivity.usesLocation {
+                                        ActivityMetric(title: "平均配速", value: "—")
+                                    } else {
+                                        ActivityMetric(title: "类型", value: selectedActivity.title)
+                                    }
+                                    ActivityMetric(title: "心率", value: "—")
+                                }
+                                HStack(spacing: 12) {
+                                    Button { locationManager.togglePause() } label: {
+                                        Label(locationManager.isPaused ? "继续" : "暂停", systemImage: locationManager.isPaused ? "play.fill" : "pause.fill")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .frame(height: 52)
+                                            .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    }
+                                    Button {
+                                        let duration = locationManager.currentElapsedTime()
+                                        if selectedActivity.usesLocation {
+                                            routeStore.save(points: locationManager.route, distance: locationManager.distance)
+                                        }
+                                        workoutStore.save(activity: selectedActivity, duration: duration, distance: locationManager.distance)
+                                        locationManager.finish()
+                                    } label: {
+                                        Text("结束")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundStyle(Color.appInk)
+                                            .frame(width: 76, height: 52)
+                                            .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    }
+                                }
                             }
-                            HStack(spacing: 12) {
-                                Button { locationManager.togglePause() } label: {
-                                    Label(locationManager.isPaused ? "继续" : "暂停", systemImage: locationManager.isPaused ? "play.fill" : "pause.fill")
+                        } else {
+                            VStack(spacing: 14) {
+                                Image(systemName: selectedActivity.icon)
+                                    .font(.system(size: 48))
+                                    .foregroundStyle(Color.appCoral)
+                                Text("准备好了吗？")
+                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                Text(selectedActivity.usesLocation ? "开始后将记录你的路线和运动数据" : "开始后将记录你的训练时长")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.appSecondary)
+                                Button(action: onStart) {
+                                    Label("开始\(selectedActivity.title)", systemImage: "play.fill")
                                         .font(.system(size: 16, weight: .bold))
                                         .foregroundStyle(.white)
                                         .frame(maxWidth: .infinity)
                                         .frame(height: 52)
                                         .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
-                                Button {
-                                    routeStore.save(points: locationManager.route, distance: locationManager.distance)
-                                    locationManager.finish()
+                                .buttonStyle(.plain)
+                                NavigationLink {
+                                    WorkoutHistoryView(store: workoutStore)
                                 } label: {
-                                    Text("结束")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundStyle(Color.appInk)
-                                        .frame(width: 76, height: 52)
-                                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    Label("查看全部运动记录", systemImage: "list.bullet.clipboard")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(Color.appBlue)
                                 }
                             }
                         }
-                    } else {
-                        VStack(spacing: 14) {
-                            Image(systemName: "figure.run.circle.fill")
-                                .font(.system(size: 48))
-                                .foregroundStyle(Color.appCoral)
-                            Text("准备好了吗？")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                            Text("开始后将记录你的路线和运动数据")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Color.appSecondary)
-                            Button(action: onStart) {
-                                Label("开始运动", systemImage: "play.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 52)
-                                    .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
                     }
                     .padding(20)
                     .appCard()
@@ -273,6 +333,100 @@ struct ActivityView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
         }
+    }
+
+    private func durationText(for duration: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(duration.rounded()))
+        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+struct ActivityTypePicker: View {
+    @Binding var selection: ActivityType
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ActivityType.allCases) { activity in
+                    Button {
+                        selection = activity
+                    } label: {
+                        Label(activity.title, systemImage: activity.icon)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(selection == activity ? Color.appInk : Color.appSecondary)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 9)
+                            .background(selection == activity ? Color.appLavender.opacity(0.7) : Color.black.opacity(0.06), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(activity.title)
+                }
+            }
+        }
+    }
+}
+
+struct WorkoutHistoryView: View {
+    @ObservedObject var store: WorkoutStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if store.records.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "figure.run.circle")
+                            .font(.system(size: 44))
+                            .foregroundStyle(Color.appSecondary)
+                        Text("还没有运动记录")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                        Text("完成一次运动后，记录会显示在这里")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.appSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 90)
+                } else {
+                    ForEach(store.records) { record in
+                        WorkoutRecordRow(record: record)
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .background(Color.appPaper)
+        .navigationTitle("全部运动记录")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct WorkoutRecordRow: View {
+    let record: WorkoutRecord
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: record.activity.icon)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Color.appCoral)
+                .frame(width: 48, height: 48)
+                .background(Color.appCoral.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(record.activity.title)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                Text(record.date, format: .dateTime.month().day().hour().minute())
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.appSecondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(record.durationText)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                Text(record.distanceText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.appSecondary)
+            }
+        }
+        .padding(16)
+        .appCard()
     }
 }
 
@@ -385,33 +539,133 @@ struct HealthView: View {
 struct RoutesView: View {
     @ObservedObject var routeStore: RouteStore
     let onFollow: () -> Void
+    @State private var selectedFilter: RouteFilter = .recommended
+    @State private var isSearchPresented = false
 
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     ScreenHeader(title: "路线", subtitle: "把喜欢的路线留给下一次")
-                    HStack {
-                        Text("推荐").fontWeight(.bold).foregroundStyle(Color.appBlue)
-                        Text("附近").foregroundStyle(Color.appSecondary)
-                        Text("我的").foregroundStyle(Color.appSecondary)
+                    HStack(spacing: 20) {
+                        ForEach(RouteFilter.allCases) { filter in
+                            Button {
+                                selectedFilter = filter
+                            } label: {
+                                Text(filter.title)
+                                    .fontWeight(selectedFilter == filter ? .bold : .regular)
+                                    .foregroundStyle(selectedFilter == filter ? Color.appBlue : Color.appSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(filter.title)
+                        }
                         Spacer()
-                        Image(systemName: "magnifyingglass")
+                        Button {
+                            isSearchPresented = true
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("搜索路线")
                     }
                     .font(.system(size: 14))
 
-                    ForEach(routeStore.routes) { route in
-                        RouteCard(title: route.name, distance: route.distanceText, detail: "刚刚保存  ·  可再次跟随", tags: ["我的路线", "已保存"], onFollow: onFollow)
+                    if selectedFilter == .mine {
+                        if routeStore.routes.isEmpty {
+                            EmptyRoutesView()
+                        } else {
+                            ForEach(routeStore.routes) { route in
+                                RouteCard(title: route.name, distance: route.distanceText, detail: "已保存  ·  可再次跟随", tags: ["我的路线", "已保存"], onFollow: onFollow)
+                            }
+                        }
+                    } else if selectedFilter == .nearby {
+                        RouteCard(title: "附近公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m", tags: ["附近", "简单", "补水点"], onFollow: onFollow)
+                        RouteCard(title: "滨江晨跑线", distance: "6.8 km", detail: "约 43 分钟  ·  平路为主", tags: ["附近", "平路", "风景优美"], onFollow: onFollow)
+                    } else {
+                        RouteCard(title: "公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m", tags: ["环线", "简单", "补水点"], onFollow: onFollow)
+                        RouteCard(title: "河岸风景线", distance: "8.1 km", detail: "约 54 分钟  ·  爬升 120 m", tags: ["环线", "中等", "风景优美"], onFollow: onFollow)
                     }
-
-                    RouteCard(title: "公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m", tags: ["环线", "简单", "补水点"], onFollow: onFollow)
-                    RouteCard(title: "河岸风景线", distance: "8.1 km", detail: "约 54 分钟  ·  爬升 120 m", tags: ["环线", "中等", "风景优美"], onFollow: onFollow)
                 }
                 .padding(20)
             }
             .background(Color.appPaper)
         }
+        .sheet(isPresented: $isSearchPresented) {
+            RouteSearchView(routeStore: routeStore, onFollow: onFollow)
+        }
     }
+}
+
+struct EmptyRoutesView: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "map")
+                .font(.system(size: 36))
+                .foregroundStyle(Color.appSecondary)
+            Text("还没有保存的路线")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+            Text("完成一次户外运动后，可以在这里找到路线")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.appSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 70)
+    }
+}
+
+struct RouteSearchView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var routeStore: RouteStore
+    let onFollow: () -> Void
+    @State private var query = ""
+
+    private var results: [RouteSearchResult] {
+        let all = [
+            RouteSearchResult(title: "公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m"),
+            RouteSearchResult(title: "河岸风景线", distance: "8.1 km", detail: "约 54 分钟  ·  爬升 120 m"),
+            RouteSearchResult(title: "附近公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  附近路线")
+        ] + routeStore.routes.map { RouteSearchResult(title: $0.name, distance: $0.distanceText, detail: "已保存路线") }
+        guard !query.isEmpty else { return all }
+        return all.filter { $0.title.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(results) { result in
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(result.title).font(.system(size: 16, weight: .semibold))
+                        Text("\(result.distance)  ·  \(result.detail)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.appSecondary)
+                    }
+                    Spacer()
+                    Button("跟随") {
+                        dismiss()
+                        onFollow()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.appBlue)
+                }
+                .padding(.vertical, 4)
+            }
+            .navigationTitle("搜索路线")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: "搜索路线")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct RouteSearchResult: Identifiable {
+    let id = UUID()
+    let title: String
+    let distance: String
+    let detail: String
 }
 
 struct RouteCard: View {
@@ -463,30 +717,75 @@ struct RouteCard: View {
 }
 
 struct LearnView: View {
+    @State private var selectedCategory: LearnCategory = .run
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     ScreenHeader(title: "学习", subtitle: "简单有效，陪你一直跑下去")
                     HStack(spacing: 8) {
-                        ForEach(["跑步", "骑行", "拉伸", "力量"], id: \.self) { item in
-                            Text(item)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(item == "跑步" ? Color.appInk : Color.appSecondary)
-                                .padding(.horizontal, 13)
-                                .padding(.vertical, 8)
-                                .background(item == "跑步" ? Color.appLavender.opacity(0.55) : Color.black.opacity(0.05), in: Capsule())
+                        ForEach(LearnCategory.allCases) { category in
+                            Button {
+                                selectedCategory = category
+                            } label: {
+                                Text(category.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(selectedCategory == category ? Color.appInk : Color.appSecondary)
+                                    .padding(.horizontal, 13)
+                                    .padding(.vertical, 8)
+                                    .background(selectedCategory == category ? Color.appLavender.opacity(0.55) : Color.black.opacity(0.05), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(category.title)
                         }
                     }
-                    LessonCard(title: "跑前热身", detail: "8 分钟  ·  初级", description: "激活身体，跑得更轻松", icon: "figure.flexibility", color: Color.appLavender.opacity(0.35))
-                    LessonCard(title: "跑后拉伸", detail: "10 分钟  ·  初级", description: "放松肌肉，恢复更轻松", icon: "figure.cooldown", color: Color.appMint.opacity(0.35))
-                    LessonCard(title: "核心训练", detail: "12 分钟  ·  进阶", description: "更强的核心，让你跑得更稳", icon: "figure.core.training", color: Color.appLemon.opacity(0.35))
+                    ForEach(Array(lessons.enumerated()), id: \.offset) { _, lesson in
+                        LessonCard(title: lesson.title, detail: lesson.detail, description: lesson.description, icon: lesson.icon, color: lesson.color)
+                    }
                 }
                 .padding(20)
             }
             .background(Color.appPaper)
         }
     }
+
+    private var lessons: [LessonData] {
+        switch selectedCategory {
+        case .run:
+            [
+                LessonData(title: "跑前热身", detail: "8 分钟  ·  初级", description: "激活身体，跑得更轻松", icon: "figure.flexibility", color: Color.appLavender.opacity(0.35)),
+                LessonData(title: "跑后拉伸", detail: "10 分钟  ·  初级", description: "放松肌肉，恢复更轻松", icon: "figure.cooldown", color: Color.appMint.opacity(0.35)),
+                LessonData(title: "核心训练", detail: "12 分钟  ·  进阶", description: "更强的核心，让你跑得更稳", icon: "figure.core.training", color: Color.appLemon.opacity(0.35))
+            ]
+        case .ride:
+            [
+                LessonData(title: "骑行前检查", detail: "6 分钟  ·  初级", description: "调整座高，检查刹车和胎压", icon: "bicycle", color: Color.appLavender.opacity(0.35)),
+                LessonData(title: "骑行节奏", detail: "15 分钟  ·  初级", description: "找到适合自己的踏频", icon: "figure.outdoor.cycle", color: Color.appMint.opacity(0.35)),
+                LessonData(title: "爬坡技巧", detail: "18 分钟  ·  进阶", description: "用更少的力气完成爬坡", icon: "mountain.2", color: Color.appLemon.opacity(0.35))
+            ]
+        case .stretch:
+            [
+                LessonData(title: "全身唤醒", detail: "8 分钟  ·  初级", description: "从肩颈到髋部逐步活动开", icon: "figure.flexibility", color: Color.appLavender.opacity(0.35)),
+                LessonData(title: "跑后拉伸", detail: "10 分钟  ·  初级", description: "放松腿部肌肉，缓解紧绷", icon: "figure.cooldown", color: Color.appMint.opacity(0.35)),
+                LessonData(title: "髋部灵活性", detail: "12 分钟  ·  进阶", description: "提升步幅和日常活动舒适度", icon: "figure.mind.and.body", color: Color.appLemon.opacity(0.35))
+            ]
+        case .strength:
+            [
+                LessonData(title: "核心训练", detail: "12 分钟  ·  初级", description: "增强核心，让动作更稳定", icon: "figure.core.training", color: Color.appLavender.opacity(0.35)),
+                LessonData(title: "下肢力量", detail: "15 分钟  ·  初级", description: "循序渐进训练臀腿力量", icon: "figure.strengthtraining.traditional", color: Color.appMint.opacity(0.35)),
+                LessonData(title: "全身力量", detail: "20 分钟  ·  进阶", description: "用简单动作覆盖主要肌群", icon: "figure.strengthtraining.functional", color: Color.appLemon.opacity(0.35))
+            ]
+        }
+    }
+}
+
+struct LessonData {
+    let title: String
+    let detail: String
+    let description: String
+    let icon: String
+    let color: Color
 }
 
 struct LessonCard: View {
