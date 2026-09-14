@@ -6,6 +6,12 @@ class WorkoutStore extends ChangeNotifier {
 
   List<WorkoutRecord> get records => List.unmodifiable(_records);
 
+  int get recordCount => _records.length;
+
+  double get outdoorDistanceMeters => _records
+      .where((record) => record.activity.usesLocation)
+      .fold(0, (total, record) => total + record.distanceMeters);
+
   void add(WorkoutRecord record) {
     _records.insert(0, record);
     notifyListeners();

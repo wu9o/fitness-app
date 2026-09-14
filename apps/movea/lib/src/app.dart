@@ -26,7 +26,7 @@ class _MoveaShellState extends State<MoveaShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      HomePage(onStart: openActivity, onHistory: openHistory),
+      HomePage(store: store, onStart: openActivity, onHistory: openHistory),
       ActivityPage(store: store),
       const HealthPage(),
       RoutesPage(onFollow: openActivity),
@@ -67,89 +67,148 @@ class _MoveaShellState extends State<MoveaShell> {
 }
 
 class HomePage extends StatelessWidget {
-  const HomePage({required this.onStart, required this.onHistory, super.key});
+  const HomePage(
+      {required this.store,
+      required this.onStart,
+      required this.onHistory,
+      super.key});
 
+  final WorkoutStore store;
   final VoidCallback onStart;
   final VoidCallback onHistory;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-      children: [
-        Text('今天想动一动吗？',
-            style: Theme.of(context)
-                .textTheme
-                .headlineMedium
-                ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
-        const SizedBox(height: 4),
-        const Text('更健康的你，从今天开始', style: TextStyle(color: Colors.black54)),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: onStart,
-          icon: const Icon(Icons.play_arrow),
-          label:
-              const Text('开始运动', style: TextStyle(fontWeight: FontWeight.w800)),
-          style: FilledButton.styleFrom(
-              backgroundColor: moveaCoral,
-              minimumSize: const Size.fromHeight(58),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18))),
-        ),
-        const SizedBox(height: 14),
-        Row(
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) {
+        final records = store.records;
+        final outdoorDistance = store.outdoorDistanceMeters / 1000;
+        final weeklyValue = outdoorDistance > 0
+            ? '${outdoorDistance.toStringAsFixed(1)} km'
+            : '${store.recordCount} 次';
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
           children: [
-            const Expanded(
-                child: _MetricCard(
-                    title: '昨晚睡眠',
-                    value: '7h 32m',
-                    note: '睡得不错',
-                    color: moveaMint)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: InkWell(
-                onTap: onHistory,
-                borderRadius: BorderRadius.circular(20),
-                child: const _MetricCard(
-                    title: '本周运动',
-                    value: '18.4 km',
-                    note: '查看全部记录',
-                    color: moveaLemon),
+            Text('今天想动一动吗？',
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
+            const SizedBox(height: 4),
+            const Text('更健康的你，从今天开始', style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onStart,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('开始运动',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              style: FilledButton.styleFrom(
+                  backgroundColor: moveaCoral,
+                  minimumSize: const Size.fromHeight(58),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18))),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Expanded(
+                    child: _MetricCard(
+                        title: '昨晚睡眠',
+                        value: '7h 32m',
+                        note: '睡得不错',
+                        color: moveaMint)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: onHistory,
+                    borderRadius: BorderRadius.circular(20),
+                    child: _MetricCard(
+                        title: '本周运动',
+                        value: weeklyValue,
+                        note: '查看全部记录',
+                        color: moveaLemon),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const MoveaSectionTitle('本周进度', action: '4 / 7 天'),
+            const SizedBox(height: 10),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: List.generate(
+                        7,
+                        (index) => _DayDot(
+                            label: '一二三四五六日'[index], active: index < 4))),
               ),
             ),
+            const SizedBox(height: 24),
+            MoveaSectionTitle(records.isEmpty ? '为你推荐' : '最近运动',
+                action: records.isEmpty ? null : '共 ${records.length} 次'),
+            const SizedBox(height: 10),
+            if (records.isEmpty)
+              Card(
+                color: moveaLemon,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.all(16),
+                  leading: const CircleAvatar(
+                      backgroundColor: moveaCoral,
+                      child: Icon(Icons.directions_run, color: Colors.white)),
+                  title: const Text('轻松跑 30 分钟',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: const Text('放松身体，保持节奏'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onStart,
+                ),
+              )
+            else
+              for (final record in records.take(3))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _RecentWorkoutCard(record: record),
+                ),
+            if (records.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onHistory,
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('查看全部运动记录'),
+                ),
+              ),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _RecentWorkoutCard extends StatelessWidget {
+  const _RecentWorkoutCard({required this.record});
+
+  final WorkoutRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: moveaLavender,
+          child: Text(record.activity.icon),
         ),
-        const SizedBox(height: 24),
-        const MoveaSectionTitle('本周进度', action: '4 / 7 天'),
-        const SizedBox(height: 10),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(
-                    7,
-                    (index) =>
-                        _DayDot(label: '一二三四五六日'[index], active: index < 4))),
-          ),
-        ),
-        const SizedBox(height: 24),
-        const MoveaSectionTitle('为你推荐'),
-        const SizedBox(height: 10),
-        Card(
-          color: moveaLemon,
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(16),
-            leading: const CircleAvatar(
-                backgroundColor: moveaCoral,
-                child: Icon(Icons.directions_run, color: Colors.white)),
-            title: const Text('轻松跑 30 分钟',
-                style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: const Text('放松身体，保持节奏'),
-            trailing: const Icon(Icons.chevron_right),
-          ),
-        ),
-      ],
+        title: Text(record.activity.label,
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(
+            '${record.startedAt.month}月${record.startedAt.day}日 · ${record.sourceDevice}'),
+        trailing: Text(formatDuration(record.duration),
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+      ),
     );
   }
 }
@@ -356,7 +415,7 @@ class _ActivityPageState extends State<ActivityPage> {
                     OutlinedButton(onPressed: finish, child: const Text('结束')),
                   ]),
                 ] else ...[
-                  Icon(Icons.directions_run, size: 48, color: moveaCoral),
+                  Text(activity.icon, style: const TextStyle(fontSize: 44)),
                   const SizedBox(height: 8),
                   const Text('准备好了吗？',
                       style:
@@ -400,73 +459,194 @@ class _MapPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFE8EEF0),
-      child: Center(
-          child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-            Icon(Icons.map, size: 64, color: moveaBlue),
-            SizedBox(height: 10),
-            Text('地图适配层待接入', style: TextStyle(color: Colors.black54))
-          ])),
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFEAF1F2), Color(0xFFDCE8E8)],
+        ),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CustomPaint(painter: _RoutePreviewPainter()),
+          Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .82),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.location_on, color: moveaBlue),
+                  SizedBox(width: 8),
+                  Text('地图适配层待接入',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class WorkoutHistoryPage extends StatelessWidget {
+class _RoutePreviewPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final road = Paint()
+      ..color = Colors.white.withValues(alpha: .72)
+      ..strokeWidth = 18
+      ..style = PaintingStyle.stroke;
+    final route = Paint()
+      ..color = moveaBlue
+      ..strokeWidth = 6
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    for (final offset in [
+      size.height * .22,
+      size.height * .52,
+      size.height * .82,
+    ]) {
+      canvas.drawLine(
+          Offset(-20, offset), Offset(size.width + 20, offset - 30), road);
+    }
+
+    final path = Path()
+      ..moveTo(size.width * .14, size.height * .75)
+      ..lineTo(size.width * .30, size.height * .58)
+      ..lineTo(size.width * .48, size.height * .65)
+      ..lineTo(size.width * .62, size.height * .34)
+      ..lineTo(size.width * .84, size.height * .26);
+    canvas.drawPath(path, route);
+    canvas.drawCircle(Offset(size.width * .14, size.height * .75), 8,
+        Paint()..color = moveaCoral);
+    canvas.drawCircle(Offset(size.width * .84, size.height * .26), 8,
+        Paint()..color = moveaBlue);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class WorkoutHistoryPage extends StatefulWidget {
   const WorkoutHistoryPage({required this.store, super.key});
 
   final WorkoutStore store;
+
+  @override
+  State<WorkoutHistoryPage> createState() => _WorkoutHistoryPageState();
+}
+
+class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
+  ActivityType? filter;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('全部运动记录')),
       body: AnimatedBuilder(
-        animation: store,
+        animation: widget.store,
         builder: (context, _) {
-          if (store.records.isEmpty)
-            return const Center(child: Text('还没有运动记录'));
-          return ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: store.records.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final record = store.records[index];
-              return Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: moveaCoral.withValues(alpha: .12),
-                    child: Text(record.activity.icon),
-                  ),
-                  title: Text(
-                    record.activity.label,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text(
-                    '${record.startedAt.month}月${record.startedAt.day}日  ·  ${record.sourceDevice}',
-                  ),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        formatDuration(record.duration),
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+          final records = filter == null
+              ? widget.store.records
+              : widget.store.records
+                  .where((record) => record.activity == filter)
+                  .toList();
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _HistoryFilter(
+                      label: '全部',
+                      selected: filter == null,
+                      onSelected: () => setState(() => filter = null),
+                    ),
+                    for (final type in ActivityType.values)
+                      _HistoryFilter(
+                        label: type.label,
+                        selected: filter == type,
+                        onSelected: () => setState(() => filter = type),
                       ),
-                      Text(
-                        record.distanceLabel,
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.black54),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              );
-            },
+              ),
+              const SizedBox(height: 14),
+              if (records.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 80),
+                  child: Center(child: Text('还没有符合条件的运动记录')),
+                )
+              else
+                for (final record in records)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Card(
+                      child: ListTile(
+                        key: ValueKey('history-record-${record.id}'),
+                        leading: CircleAvatar(
+                          backgroundColor: moveaCoral.withValues(alpha: .12),
+                          child: Text(record.activity.icon),
+                        ),
+                        title: Text(
+                          record.activity.label,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          '${record.startedAt.month}月${record.startedAt.day}日  ·  ${record.sourceDevice}',
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              formatDuration(record.duration),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            Text(
+                              record.distanceLabel,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.black54),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _HistoryFilter extends StatelessWidget {
+  const _HistoryFilter(
+      {required this.label, required this.selected, required this.onSelected});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onSelected(),
       ),
     );
   }

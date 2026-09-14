@@ -66,7 +66,8 @@ void main() {
     await tester.tap(find.text('查看全部运动记录'));
     await tester.pumpAndSettle();
     expect(find.text('全部运动记录'), findsOneWidget);
-    expect(find.text('骑行'), findsOneWidget);
+    expect(find.text('骑行'), findsNWidgets(2));
+    expect(find.byType(ListTile), findsOneWidget);
   });
 
   testWidgets('Movea route tabs and learning categories respond',
