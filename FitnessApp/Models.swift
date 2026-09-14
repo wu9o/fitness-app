@@ -1,6 +1,77 @@
 import MapKit
 import SwiftUI
 
+struct SleepSummary: Codable {
+    var durationMinutes: Int = 452
+    var deepMinutes: Int = 78
+    var remMinutes: Int = 72
+    var awakeMinutes: Int = 32
+
+    static let demo = SleepSummary()
+
+    var durationText: String {
+        "\(durationMinutes / 60)h \(durationMinutes % 60)m"
+    }
+}
+
+struct TrackPoint: Codable, Hashable {
+    let latitude: Double
+    let longitude: Double
+
+    init(_ coordinate: CLLocationCoordinate2D) {
+        latitude = coordinate.latitude
+        longitude = coordinate.longitude
+    }
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+struct SavedRoute: Codable, Identifiable {
+    let id: UUID
+    let name: String
+    let createdAt: Date
+    let points: [TrackPoint]
+    let distance: Double
+
+    var distanceText: String {
+        String(format: "%.2f km", distance / 1000)
+    }
+}
+
+@MainActor
+final class RouteStore: ObservableObject {
+    @Published private(set) var routes: [SavedRoute] = []
+
+    private let fileURL: URL
+
+    init() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MoveLog", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        fileURL = directory.appendingPathComponent("routes.json")
+        load()
+    }
+
+    func save(points: [CLLocationCoordinate2D], distance: Double) {
+        guard points.count >= 2 else { return }
+        let route = SavedRoute(id: UUID(), name: "我的运动路线 \(routes.count + 1)", createdAt: Date(), points: points.map(TrackPoint.init), distance: distance)
+        routes.insert(route, at: 0)
+        persist()
+    }
+
+    private func load() {
+        guard let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode([SavedRoute].self, from: data) else { return }
+        routes = decoded
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(routes) else { return }
+        try? data.write(to: fileURL, options: [.atomic])
+    }
+}
+
 enum AppTab: String, CaseIterable, Identifiable {
     case home, activity, health, routes, learn
 

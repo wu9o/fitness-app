@@ -3,15 +3,18 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedTab: AppTab = .home
+    @StateObject private var locationManager = LocationManager()
+    @StateObject private var routeStore = RouteStore()
+    @StateObject private var healthKit = HealthKitManager()
 
     var body: some View {
         VStack(spacing: 0) {
             Group {
                 switch selectedTab {
-                case .home: HomeView()
-                case .activity: ActivityView()
-                case .health: HealthView()
-                case .routes: RoutesView()
+                case .home: HomeView(onStart: { selectedTab = .activity; locationManager.start() }, routeStore: routeStore, healthKit: healthKit)
+                case .activity: ActivityView(locationManager: locationManager, routeStore: routeStore)
+                case .health: HealthView(healthKit: healthKit)
+                case .routes: RoutesView(routeStore: routeStore)
                 case .learn: LearnView()
                 }
             }
@@ -53,6 +56,10 @@ struct BottomBar: View {
 }
 
 struct HomeView: View {
+    let onStart: () -> Void
+    @ObservedObject var routeStore: RouteStore
+    @ObservedObject var healthKit: HealthKitManager
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -65,7 +72,7 @@ struct HomeView: View {
                                 .foregroundStyle(Color.appSecondary)
                         }
                         Spacer()
-                        NavigationLink(destination: SyncView()) {
+                        NavigationLink(destination: SyncView(routeStore: routeStore, healthKit: healthKit)) {
                             Image(systemName: "lock.shield.fill")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(Color.appInk)
@@ -74,7 +81,7 @@ struct HomeView: View {
                         }
                     }
 
-                    Button {} label: {
+                    Button(action: onStart) {
                         HStack {
                             Image(systemName: "figure.run")
                                 .font(.system(size: 22, weight: .bold))
@@ -168,13 +175,16 @@ struct HomeMetric: View {
 }
 
 struct ActivityView: View {
+    @ObservedObject var locationManager: LocationManager
+    @ObservedObject var routeStore: RouteStore
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 Map(initialPosition: .region(DemoRoute.region), interactionModes: []) {
-                    MapPolyline(coordinates: DemoRoute.coordinates)
+                    MapPolyline(coordinates: locationManager.route.isEmpty ? DemoRoute.coordinates : locationManager.route)
                         .stroke(Color.appBlue, lineWidth: 6)
-                    Annotation("当前位置", coordinate: DemoRoute.coordinates[3]) {
+                    Annotation("当前位置", coordinate: locationManager.route.last ?? DemoRoute.coordinates[3]) {
                         Circle().fill(Color.appBlue).frame(width: 18, height: 18).overlay(Circle().stroke(.white, lineWidth: 4))
                     }
                 }
@@ -197,7 +207,7 @@ struct ActivityView: View {
                     }
 
                     VStack(spacing: 18) {
-                        Text("5.24 km")
+                        Text(locationManager.isRecording ? String(format: "%.2f km", locationManager.distance / 1000) : "5.24 km")
                             .font(.system(size: 50, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.appInk)
                         HStack {
@@ -206,15 +216,18 @@ struct ActivityView: View {
                             ActivityMetric(title: "心率", value: "142")
                         }
                         HStack(spacing: 12) {
-                            Button {} label: {
-                                Label("暂停", systemImage: "pause.fill")
+                            Button { locationManager.togglePause() } label: {
+                                Label(locationManager.isPaused ? "继续" : "暂停", systemImage: locationManager.isPaused ? "play.fill" : "pause.fill")
                                     .font(.system(size: 16, weight: .bold))
                                     .foregroundStyle(.white)
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 52)
                                     .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
-                            Button {} label: {
+                            Button {
+                                routeStore.save(points: locationManager.route, distance: locationManager.distance)
+                                locationManager.finish()
+                            } label: {
                                 Text("结束")
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundStyle(Color.appInk)
@@ -250,6 +263,8 @@ struct ActivityMetric: View {
 }
 
 struct HealthView: View {
+    @ObservedObject var healthKit: HealthKitManager
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -265,7 +280,7 @@ struct HealthView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Color.green)
                         }
-                        Text("7h 32m")
+                        Text(healthKit.sleep.durationText)
                             .font(.system(size: 46, weight: .bold, design: .rounded))
                         HStack(spacing: 4) {
                             ForEach(0..<24, id: \.self) { index in
@@ -275,7 +290,7 @@ struct HealthView: View {
                             }
                         }
                         HStack {
-                            Text("23:10"); Spacer(); Text("06:42")
+                        Text("23:10"); Spacer(); Text("06:42")
                         }
                         .font(.system(size: 11))
                         .foregroundStyle(Color.appSecondary)
@@ -323,11 +338,23 @@ struct HealthView: View {
                 .padding(20)
             }
             .background(Color.appPaper)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        healthKit.requestAndLoad()
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    .accessibilityLabel("同步健康数据")
+                }
+            }
         }
     }
 }
 
 struct RoutesView: View {
+    @ObservedObject var routeStore: RouteStore
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -341,6 +368,10 @@ struct RoutesView: View {
                         Image(systemName: "magnifyingglass")
                     }
                     .font(.system(size: 14))
+
+                    ForEach(routeStore.routes) { route in
+                        RouteCard(title: route.name, distance: route.distanceText, detail: "刚刚保存  ·  可再次跟随", tags: ["我的路线", "已保存"])
+                    }
 
                     RouteCard(title: "公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m", tags: ["环线", "简单", "补水点"])
                     RouteCard(title: "河岸风景线", distance: "8.1 km", detail: "约 54 分钟  ·  爬升 120 m", tags: ["环线", "中等", "风景优美"])
@@ -466,6 +497,10 @@ struct ScreenHeader: View {
 }
 
 struct SyncView: View {
+    @ObservedObject private var sync = GitHubSyncManager.shared
+    @ObservedObject var routeStore: RouteStore
+    @ObservedObject var healthKit: HealthKitManager
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -474,9 +509,9 @@ struct SyncView: View {
                     Image(systemName: "lock.icloud.fill")
                         .font(.system(size: 48))
                         .foregroundStyle(Color.appBlue)
-                    Text("已连接私密仓库")
+                    Text(sync.username == nil ? "尚未连接私密仓库" : "已连接私密仓库")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                    Text("数据在上传前加密")
+                    Text(sync.status)
                         .font(.system(size: 13))
                         .foregroundStyle(Color.appSecondary)
                 }
@@ -484,17 +519,27 @@ struct SyncView: View {
                 .padding(24)
                 .appCard(fill: Color.appBlue.opacity(0.10))
 
-                SyncRow(icon: "lock.fill", title: "加密备份", detail: "运动、路线、睡眠与健康数据", value: "已开启")
+                SyncRow(icon: "lock.fill", title: "加密备份", detail: sync.repository, value: "已开启")
                 SyncRow(icon: "clock.fill", title: "最近同步", detail: "所有数据均已保存", value: "今天 08:24")
                 SyncRow(icon: "arrow.clockwise", title: "恢复数据", detail: "从私密仓库恢复历史数据", value: "")
 
-                Button {} label: {
-                    Text("管理 GitHub 连接")
+                Button { sync.connect() } label: {
+                    Text(sync.username == nil ? "连接 GitHub" : "管理 GitHub 连接")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 52)
                         .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                Button {
+                    Task { await sync.uploadEncryptedBackup(sleep: healthKit.sleep, routes: routeStore.routes) }
+                } label: {
+                    Text("立即备份当前数据")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.appCoral)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color.appCoral.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
             }
             .padding(20)

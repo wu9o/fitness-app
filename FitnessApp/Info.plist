@@ -16,12 +16,33 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GitHubOAuthClientID</key>
+	<string>YOUR_GITHUB_OAUTH_CLIENT_ID</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>movelog</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>用于记录户外运动路线，并在跟随路线时提供位置提示。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>用于记录户外运动路线，并在跟随路线时提供位置提示。</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>用于读取睡眠和运动数据，生成个人健康与恢复摘要。</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>用于将本 App 记录的运动保存到 Apple 健康。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>

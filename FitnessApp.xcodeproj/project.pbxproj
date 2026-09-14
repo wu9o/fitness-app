@@ -12,6 +12,9 @@
 		A10000010000000000000003 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000003 /* DesignSystem.swift */; };
 		A10000010000000000000004 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000004 /* ContentView.swift */; };
 		A10000010000000000000005 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000005 /* Assets.xcassets */; };
+		A10000010000000000000006 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000008 /* HealthKitManager.swift */; };
+		A10000010000000000000007 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000009 /* LocationManager.swift */; };
+		A10000010000000000000008 /* GitHubSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000010 /* GitHubSyncManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +25,10 @@
 		A10000110000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A10000110000000000000003 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		A10000110000000000000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A10000110000000000000008 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
+		A10000110000000000000009 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
+		A10000110000000000000010 /* GitHubSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubSyncManager.swift; sourceTree = "<group>"; };
+		A10000110000000000000011 /* FitnessApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FitnessApp.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,8 +57,12 @@
 				A10000110000000000000002 /* Models.swift */,
 				A10000110000000000000003 /* DesignSystem.swift */,
 				A10000110000000000000004 /* ContentView.swift */,
+				A10000110000000000000008 /* HealthKitManager.swift */,
+				A10000110000000000000009 /* LocationManager.swift */,
+				A10000110000000000000010 /* GitHubSyncManager.swift */,
 				A10000110000000000000005 /* Assets.xcassets */,
 				A10000110000000000000006 /* Info.plist */,
+				A10000110000000000000011 /* FitnessApp.entitlements */,
 			);
 			path = FitnessApp;
 			sourceTree = "<group>";
@@ -136,6 +147,9 @@
 				A10000010000000000000002 /* Models.swift in Sources */,
 				A10000010000000000000003 /* DesignSystem.swift in Sources */,
 				A10000010000000000000004 /* ContentView.swift in Sources */,
+				A10000010000000000000006 /* HealthKitManager.swift in Sources */,
+				A10000010000000000000007 /* LocationManager.swift in Sources */,
+				A10000010000000000000008 /* GitHubSyncManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -147,6 +161,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = FitnessApp/FitnessApp.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FitnessApp/Info.plist;
@@ -165,6 +180,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = FitnessApp/FitnessApp.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FitnessApp/Info.plist;
