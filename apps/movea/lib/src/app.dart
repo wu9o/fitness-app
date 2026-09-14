@@ -16,6 +16,12 @@ class _MoveaShellState extends State<MoveaShell> {
   final WorkoutStore store = WorkoutStore();
   int selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(store.restore());
+  }
+
   void openActivity() => setState(() => selectedIndex = 1);
 
   void openHistory() {

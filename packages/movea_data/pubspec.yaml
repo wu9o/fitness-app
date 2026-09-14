@@ -9,3 +9,4 @@ dependencies:
     sdk: flutter
   movea_domain:
     path: ../movea_domain
+  shared_preferences: ^2.5.3

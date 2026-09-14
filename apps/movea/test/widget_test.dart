@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:movea_data/movea_data.dart';
+import 'package:movea_domain/movea_domain.dart';
 import 'package:movea/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('Movea shows the primary navigation', (tester) async {
@@ -86,5 +89,29 @@ void main() {
     await tester.pump();
     expect(find.text('骑行前检查'), findsOneWidget);
     expect(find.text('跑前热身'), findsNothing);
+  });
+
+  test('WorkoutStore persists and restores records', () async {
+    SharedPreferences.setMockInitialValues({});
+    final persistence = SharedPreferencesWorkoutPersistence();
+    final original = WorkoutStore(persistence: persistence);
+    final startedAt = DateTime(2026, 9, 14, 8);
+    await original.restore();
+
+    original.add(WorkoutRecord(
+      id: 'persistence-test',
+      activity: ActivityType.ride,
+      startedAt: startedAt,
+      duration: const Duration(minutes: 42),
+      distanceMeters: 12300,
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    final restored = WorkoutStore(persistence: persistence);
+    await restored.restore();
+    expect(restored.records, hasLength(1));
+    expect(restored.records.single.activity, ActivityType.ride);
+    expect(restored.records.single.duration, const Duration(minutes: 42));
+    expect(restored.records.single.distanceMeters, 12300);
   });
 }

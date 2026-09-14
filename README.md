@@ -50,7 +50,7 @@ Movea 记录跑步、骑行、拉伸、力量训练、睡眠和健康数据，�
 - Flutter/Dart：共享主要界面、导航、领域模型、记录和同步流程
 - 平台适配层：隔离 HealthKit、Health Connect、Core Location 和 Android Location
 - Apple Watch：使用 watchOS Workout Session，避免把低功耗传感器能力塞进跨平台 UI
-- 数据层：SQLite/本地文件作为本地数据源，GitHub 私密仓库作为加密备份，不作为实时数据库
+- 数据层：设备本地持久化作为第一数据源，GitHub 私密仓库作为加密备份，不作为实时数据库
 
 ## 数据与隐私
 
@@ -92,7 +92,7 @@ fitness-app/
 ## 当前状态
 
 - SwiftUI 原型：可运行，用于保留已确认的视觉和交互参考
-- Flutter 主应用：迁移中
+- Flutter 主应用：已具备本地运动记录持久化和恢复骨架
 - Apple Watch：架构和数据协议设计中
 - GitHub 加密同步：已有概念验证，尚未作为正式数据层发布
 

@@ -26,6 +26,9 @@ flutter build ios --no-codesign
 flutter build macos
 ```
 
+运动记录会写入本地持久化层。需要验证恢复流程时，结束一条运动后完全退出并重新启动 App，
+再从首页或运动页打开“全部运动记录”。
+
 平台适配和设备功能需要额外验证：
 
 - iPhone：真实定位、后台运动、健康授权

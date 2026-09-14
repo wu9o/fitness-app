@@ -17,7 +17,7 @@ domain
   ActivityType / WorkoutRecord / Route / SleepSummary
 
 data
-  local database / encrypted backup / merge and recovery
+  local persistence / encrypted backup / merge and recovery
 
 platform
   health / location / watch connectivity / secure storage
@@ -66,6 +66,9 @@ GitHub 私密仓库是备份目标，不是在线数据库。客户端需要：
 3. 下载远端 manifest 后合并记录
 4. 使用版本号和幂等 ID 去重
 5. 失败时保留本地待同步队列
+
+当前 Flutter 骨架已经用 `SharedPreferencesWorkoutPersistence` 保存运动摘要，
+作为离线优先的第一步；路线点、睡眠原始数据和加密 GitHub 备份仍沿用接口逐步接入。
 
 ## Watch 数据流
 
