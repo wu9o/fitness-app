@@ -683,7 +683,9 @@ class _MapPreview extends StatelessWidget {
       child: FlutterMap(
         options: MapOptions(
           initialCenter: start,
-          initialZoom: 14.5,
+          initialZoom: 13.7,
+          minZoom: 11,
+          maxZoom: 17,
           interactionOptions: const InteractionOptions(
             flags: InteractiveFlag.all,
           ),
@@ -692,6 +694,11 @@ class _MapPreview extends StatelessWidget {
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
             userAgentPackageName: 'com.wu9o.movea',
+          ),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: ColoredBox(color: Color(0x22FFFFFF)),
+            ),
           ),
           PolylineLayer(
             polylines: [
