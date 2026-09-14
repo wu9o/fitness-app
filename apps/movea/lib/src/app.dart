@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_design/movea_design.dart';
 import 'package:movea_domain/movea_domain.dart';
@@ -549,7 +551,7 @@ class _ActivityPageState extends State<ActivityPage> {
       alignment: Alignment.bottomCenter,
       children: [
         if (activity.usesLocation)
-          const _MapPreview()
+          const _MapPreview(points: _demoRoute)
         else
           const ColoredBox(color: moveaPaper),
         Padding(
@@ -563,7 +565,7 @@ class _ActivityPageState extends State<ActivityPage> {
                   padding: const EdgeInsets.all(18),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     Row(children: [
-                      Text(activity.usesLocation ? 'GPS 待接入' : '室内训练',
+                      Text(activity.usesLocation ? '地图已接入 · 定位授权后记录路线' : '室内训练',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                       const Spacer(),
                       Text(activity.label,
@@ -658,39 +660,98 @@ class _ActivityPageState extends State<ActivityPage> {
 String formatDuration(Duration duration) =>
     '${duration.inMinutes.toString().padLeft(2, '0')}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}';
 
+const _demoRoute = <LatLng>[
+  LatLng(31.2304, 121.4737),
+  LatLng(31.2322, 121.4780),
+  LatLng(31.2290, 121.4835),
+  LatLng(31.2258, 121.4790),
+  LatLng(31.2244, 121.4720),
+  LatLng(31.2280, 121.4705),
+];
+
 class _MapPreview extends StatelessWidget {
-  const _MapPreview();
+  const _MapPreview({required this.points});
+
+  final List<LatLng> points;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFEAF1F2), Color(0xFFDCE8E8)],
+    final start = points.first;
+    final finish = points.last;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: start,
+          initialZoom: 14.5,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.all,
+          ),
         ),
-      ),
-      child: Stack(
-        fit: StackFit.expand,
         children: [
-          CustomPaint(painter: _RoutePreviewPainter()),
-          Center(
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.wu9o.movea',
+          ),
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: points,
+                color: moveaBlue,
+                strokeWidth: 5,
+                borderColor: Colors.white,
+                borderStrokeWidth: 2,
+              ),
+            ],
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: start,
+                width: 36,
+                height: 36,
+                child:
+                    const _MapMarker(color: moveaCoral, icon: Icons.play_arrow),
+              ),
+              Marker(
+                point: finish,
+                width: 36,
+                height: 36,
+                child: const _MapMarker(color: moveaBlue, icon: Icons.flag),
+              ),
+            ],
+          ),
+          Positioned(
+            left: 12,
+            top: 12,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .82),
-                borderRadius: BorderRadius.circular(18),
+                color: Colors.white.withValues(alpha: .92),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x22000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
               child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.location_on, color: moveaBlue),
-                  SizedBox(width: 8),
-                  Text('地图适配层待接入',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  Icon(Icons.touch_app, size: 16, color: moveaBlue),
+                  SizedBox(width: 6),
+                  Text('可缩放 · 可拖动',
+                      style:
+                          TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 ]),
               ),
             ),
+          ),
+          const RichAttributionWidget(
+            attributions: [
+              TextSourceAttribution('© OpenStreetMap contributors'),
+            ],
           ),
         ],
       ),
@@ -698,44 +759,26 @@ class _MapPreview extends StatelessWidget {
   }
 }
 
-class _RoutePreviewPainter extends CustomPainter {
+class _MapMarker extends StatelessWidget {
+  const _MapMarker({required this.color, required this.icon});
+
+  final Color color;
+  final IconData icon;
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final road = Paint()
-      ..color = Colors.white.withValues(alpha: .72)
-      ..strokeWidth = 18
-      ..style = PaintingStyle.stroke;
-    final route = Paint()
-      ..color = moveaBlue
-      ..strokeWidth = 6
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    for (final offset in [
-      size.height * .22,
-      size.height * .52,
-      size.height * .82,
-    ]) {
-      canvas.drawLine(
-          Offset(-20, offset), Offset(size.width + 20, offset - 30), road);
-    }
-
-    final path = Path()
-      ..moveTo(size.width * .14, size.height * .75)
-      ..lineTo(size.width * .30, size.height * .58)
-      ..lineTo(size.width * .48, size.height * .65)
-      ..lineTo(size.width * .62, size.height * .34)
-      ..lineTo(size.width * .84, size.height * .26);
-    canvas.drawPath(path, route);
-    canvas.drawCircle(Offset(size.width * .14, size.height * .75), 8,
-        Paint()..color = moveaCoral);
-    canvas.drawCircle(Offset(size.width * .84, size.height * .26), 8,
-        Paint()..color = moveaBlue);
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: const [
+          BoxShadow(color: Color(0x44000000), blurRadius: 5),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: 18),
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class WorkoutHistoryPage extends StatefulWidget {
@@ -874,13 +917,13 @@ class HealthPage extends StatelessWidget {
                 ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
         const Text('了解身体，跑得更远', style: TextStyle(color: Colors.black54)),
         const SizedBox(height: 18),
-        Card(
+        const Card(
             color: moveaMint,
             child: Padding(
-                padding: const EdgeInsets.all(18),
+                padding: EdgeInsets.all(18),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text('昨晚睡眠',
                           style: TextStyle(fontWeight: FontWeight.w700)),
                       SizedBox(height: 8),
@@ -976,7 +1019,8 @@ class _RoutesPageState extends State<RoutesPage> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 130, child: _MapPreview()),
+                    const SizedBox(
+                        height: 220, child: _MapPreview(points: _demoRoute)),
                     Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(

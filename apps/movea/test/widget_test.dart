@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_domain/movea_domain.dart';
@@ -41,6 +42,7 @@ void main() {
     await tester.tap(find.text('路线').last);
     await tester.pumpAndSettle();
     expect(find.text('公园环线'), findsOneWidget);
+    expect(find.byType(FlutterMap), findsNWidgets(2));
 
     await tester.tap(find.text('学习').last);
     await tester.pumpAndSettle();

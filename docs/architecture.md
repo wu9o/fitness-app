@@ -70,6 +70,14 @@ GitHub 私密仓库是备份目标，不是在线数据库。客户端需要：
 当前 Flutter 骨架已经用 `SharedPreferencesWorkoutPersistence` 保存运动摘要，
 作为离线优先的第一步；路线点、睡眠原始数据和加密 GitHub 备份仍沿用接口逐步接入。
 
+## 地图与路线预览
+
+路线页和室外运动页使用 Flutter 的 `flutter_map` 作为跨端地图容器，底图通过 `TileLayer`
+加载，路线通过 `PolylineLayer` 绘制，起点和终点通过 `MarkerLayer` 标注。当前开发预览使用
+OpenStreetMap 瓦片并显示署名，macOS 沙盒已开启出站网络权限；正式发布前需要根据覆盖区域、
+缓存策略和服务条款切换到经过确认的地图瓦片服务。真实定位轨迹仍由 `LocationRepository`
+提供，地图容器不直接依赖某个平台的定位 SDK。
+
 ## Watch 数据流
 
 ```text
