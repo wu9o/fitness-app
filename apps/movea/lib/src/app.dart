@@ -220,6 +220,8 @@ class ActivityPage extends StatefulWidget {
 class _ActivityPageState extends State<ActivityPage> {
   ActivityType activity = ActivityType.run;
   DateTime? startedAt;
+  DateTime? pausedAt;
+  Duration pausedDuration = Duration.zero;
   Timer? timer;
   Duration elapsed = Duration.zero;
   bool paused = false;
@@ -229,16 +231,39 @@ class _ActivityPageState extends State<ActivityPage> {
   void start() {
     setState(() {
       startedAt = DateTime.now();
+      pausedAt = null;
+      pausedDuration = Duration.zero;
       elapsed = Duration.zero;
       paused = false;
     });
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || startedAt == null || paused) return;
-      setState(() => elapsed = DateTime.now().difference(startedAt!));
+      setState(() => elapsed = activeElapsed());
     });
   }
 
-  void togglePause() => setState(() => paused = !paused);
+  Duration activeElapsed() {
+    final startTime = startedAt;
+    if (startTime == null) return Duration.zero;
+    final currentPause =
+        pausedAt == null ? Duration.zero : DateTime.now().difference(pausedAt!);
+    return DateTime.now().difference(startTime) - pausedDuration - currentPause;
+  }
+
+  void togglePause() {
+    final now = DateTime.now();
+    setState(() {
+      if (paused) {
+        if (pausedAt != null) pausedDuration += now.difference(pausedAt!);
+        pausedAt = null;
+        paused = false;
+        elapsed = activeElapsed();
+      } else {
+        pausedAt = now;
+        paused = true;
+      }
+    });
+  }
 
   void finish() {
     final startTime = startedAt;
@@ -247,11 +272,13 @@ class _ActivityPageState extends State<ActivityPage> {
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         activity: activity,
         startedAt: startTime,
-        duration: elapsed,
+        duration: activeElapsed(),
         distanceMeters: 0));
     timer?.cancel();
     setState(() {
       startedAt = null;
+      pausedAt = null;
+      pausedDuration = Duration.zero;
       elapsed = Duration.zero;
       paused = false;
     });
