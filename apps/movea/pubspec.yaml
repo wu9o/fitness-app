@@ -15,6 +15,7 @@ dependencies:
   movea_design:
     path: ../../packages/movea_design
   flutter_map: ^8.3.2
+  flutter_map_vector_tiles: ^2.8.1
   latlong2: ^0.9.1
   shared_preferences: ^2.5.3
 
@@ -25,3 +26,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/maps/movea-minimal.json

@@ -72,11 +72,12 @@ GitHub 私密仓库是备份目标，不是在线数据库。客户端需要：
 
 ## 地图与路线预览
 
-路线页和室外运动页使用 Flutter 的 `flutter_map` 作为跨端地图容器，底图通过 `TileLayer`
-加载，路线通过 `PolylineLayer` 绘制，起点和终点通过 `MarkerLayer` 标注。当前开发预览使用
-OpenStreetMap 瓦片并显示署名，macOS 沙盒已开启出站网络权限；正式发布前需要根据覆盖区域、
-缓存策略和服务条款切换到经过确认的地图瓦片服务。路线界面默认使用较低缩放级别并弱化
-底图对比度，让路线线条成为主要视觉信息；用户仍可以手势放大查看细节。真实定位轨迹仍由
+路线页和室外运动页使用 Flutter 的 `flutter_map` 作为跨端地图容器，运动地图通过
+`flutter_map_vector_tiles` 加载 MapLibre 风格的矢量瓦片，路线通过 `PolylineLayer` 绘制，
+起点和终点通过 `MarkerLayer` 标注。`apps/movea/assets/maps/movea-minimal.json` 是 Movea
+自己的地图主题：只保留水域、公园和主要道路，默认关闭 POI、地名和小路标签。当前开发预览
+使用 OpenFreeMap 的 OpenMapTiles 数据并显示署名，macOS 沙盒已开启出站网络权限；正式发布
+前需要根据覆盖区域、缓存策略和服务条款切换到经过确认的地图瓦片服务。真实定位轨迹仍由
 `LocationRepository` 提供，地图容器不直接依赖某个平台的定位 SDK。
 
 ## Watch 数据流

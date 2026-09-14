@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart' as vt;
 import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_design/movea_design.dart';
@@ -669,10 +670,67 @@ const _demoRoute = <LatLng>[
   LatLng(31.2280, 121.4705),
 ];
 
-class _MapPreview extends StatelessWidget {
+class _MapPreview extends StatefulWidget {
   const _MapPreview({required this.points});
 
   final List<LatLng> points;
+
+  @override
+  State<_MapPreview> createState() => _MapPreviewState();
+}
+
+class _MapPreviewState extends State<_MapPreview> {
+  late final Future<vt.Style?> _styleFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _styleFuture = _loadStyle();
+  }
+
+  Future<vt.Style?> _loadStyle() async {
+    try {
+      return await const vt.StyleReader(
+        uri: 'asset://assets/maps/movea-minimal.json',
+        cache: false,
+        logger: vt.Logger.console(),
+      ).read();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _styleFuture.then((style) => style?.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<vt.Style?>(
+      future: _styleFuture,
+      builder: (context, snapshot) {
+        return _MapCanvas(
+          style: snapshot.data,
+          points: widget.points,
+          loading: snapshot.connectionState != ConnectionState.done,
+        );
+      },
+    );
+  }
+}
+
+class _MapCanvas extends StatelessWidget {
+  const _MapCanvas({
+    required this.style,
+    required this.points,
+    required this.loading,
+  });
+
+  final vt.Style? style;
+  final List<LatLng> points;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -691,15 +749,17 @@ class _MapPreview extends StatelessWidget {
           ),
         ),
         children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.wu9o.movea',
-          ),
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: ColoredBox(color: Color(0xB3F2F5F3)),
-            ),
-          ),
+          if (style != null)
+            vt.VectorTileLayer(
+              theme: style!.theme,
+              tileProviders: style!.providers,
+              rasterSources: style!.rasterSources,
+              sprites: style!.sprites,
+              showLabels: false,
+              logger: const vt.Logger.console(),
+            )
+          else
+            const ColoredBox(color: Color(0xFFF7F8F5)),
           PolylineLayer(
             polylines: [
               Polyline(
@@ -743,21 +803,24 @@ class _MapPreview extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.touch_app, size: 16, color: moveaBlue),
-                  SizedBox(width: 6),
-                  Text('可缩放 · 可拖动',
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  Icon(loading ? Icons.sync : Icons.touch_app,
+                      size: 16, color: moveaBlue),
+                  const SizedBox(width: 6),
+                  Text(loading ? '加载地图样式' : '可缩放 · 可拖动',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700)),
                 ]),
               ),
             ),
           ),
           const RichAttributionWidget(
             attributions: [
-              TextSourceAttribution('© OpenStreetMap contributors'),
+              TextSourceAttribution(
+                  '© OpenStreetMap contributors · OpenFreeMap'),
             ],
           ),
         ],
