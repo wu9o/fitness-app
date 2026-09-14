@@ -44,6 +44,7 @@ struct SavedRoute: Codable, Identifiable {
 final class RouteStore: ObservableObject {
     @Published private(set) var routes: [SavedRoute] = []
 
+    private static let minimumDistanceMeters: CLLocationDistance = 10
     private let fileURL: URL
 
     init() {
@@ -55,7 +56,7 @@ final class RouteStore: ObservableObject {
     }
 
     func save(points: [CLLocationCoordinate2D], distance: Double) {
-        guard points.count >= 2 else { return }
+        guard points.count >= 2, distance >= Self.minimumDistanceMeters else { return }
         let route = SavedRoute(id: UUID(), name: "我的运动路线 \(routes.count + 1)", createdAt: Date(), points: points.map(TrackPoint.init), distance: distance)
         routes.insert(route, at: 0)
         persist()
@@ -63,7 +64,10 @@ final class RouteStore: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode([SavedRoute].self, from: data) else { return }
-        routes = decoded
+        routes = decoded.filter { $0.points.count >= 2 && $0.distance >= Self.minimumDistanceMeters }
+        if routes.count != decoded.count {
+            persist()
+        }
     }
 
     private func persist() {

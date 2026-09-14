@@ -11,10 +11,10 @@ struct ContentView: View {
         VStack(spacing: 0) {
             Group {
                 switch selectedTab {
-                case .home: HomeView(onStart: { selectedTab = .activity; locationManager.start() }, routeStore: routeStore, healthKit: healthKit)
-                case .activity: ActivityView(locationManager: locationManager, routeStore: routeStore)
+                case .home: HomeView(onStart: startActivity, routeStore: routeStore, healthKit: healthKit)
+                case .activity: ActivityView(locationManager: locationManager, routeStore: routeStore, onStart: startActivity)
                 case .health: HealthView(healthKit: healthKit)
-                case .routes: RoutesView(routeStore: routeStore)
+                case .routes: RoutesView(routeStore: routeStore, onFollow: startActivity)
                 case .learn: LearnView()
                 }
             }
@@ -25,6 +25,11 @@ struct ContentView: View {
         }
         .background(Color.appPaper.ignoresSafeArea())
         .tint(Color.appCoral)
+    }
+
+    private func startActivity() {
+        selectedTab = .activity
+        locationManager.start()
     }
 }
 
@@ -177,6 +182,7 @@ struct HomeMetric: View {
 struct ActivityView: View {
     @ObservedObject var locationManager: LocationManager
     @ObservedObject var routeStore: RouteStore
+    let onStart: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -206,35 +212,59 @@ struct ActivityView: View {
                             .background(.white.opacity(0.94), in: Capsule())
                     }
 
-                    VStack(spacing: 18) {
-                        Text(locationManager.isRecording ? String(format: "%.2f km", locationManager.distance / 1000) : "5.24 km")
-                            .font(.system(size: 50, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.appInk)
-                        HStack {
-                            ActivityMetric(title: "用时", value: "32:18")
-                            ActivityMetric(title: "平均配速", value: "6'09''")
-                            ActivityMetric(title: "心率", value: "142")
+                    Group {
+                    if locationManager.isRecording {
+                        VStack(spacing: 18) {
+                            Text(String(format: "%.2f km", locationManager.distance / 1000))
+                                .font(.system(size: 50, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.appInk)
+                            HStack {
+                                ActivityMetric(title: "用时", value: "32:18")
+                                ActivityMetric(title: "平均配速", value: "6'09''")
+                                ActivityMetric(title: "心率", value: "142")
+                            }
+                            HStack(spacing: 12) {
+                                Button { locationManager.togglePause() } label: {
+                                    Label(locationManager.isPaused ? "继续" : "暂停", systemImage: locationManager.isPaused ? "play.fill" : "pause.fill")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 52)
+                                        .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                }
+                                Button {
+                                    routeStore.save(points: locationManager.route, distance: locationManager.distance)
+                                    locationManager.finish()
+                                } label: {
+                                    Text("结束")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundStyle(Color.appInk)
+                                        .frame(width: 76, height: 52)
+                                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                }
+                            }
                         }
-                        HStack(spacing: 12) {
-                            Button { locationManager.togglePause() } label: {
-                                Label(locationManager.isPaused ? "继续" : "暂停", systemImage: locationManager.isPaused ? "play.fill" : "pause.fill")
+                    } else {
+                        VStack(spacing: 14) {
+                            Image(systemName: "figure.run.circle.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(Color.appCoral)
+                            Text("准备好了吗？")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                            Text("开始后将记录你的路线和运动数据")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.appSecondary)
+                            Button(action: onStart) {
+                                Label("开始运动", systemImage: "play.fill")
                                     .font(.system(size: 16, weight: .bold))
                                     .foregroundStyle(.white)
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 52)
                                     .background(Color.appCoral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
-                            Button {
-                                routeStore.save(points: locationManager.route, distance: locationManager.distance)
-                                locationManager.finish()
-                            } label: {
-                                Text("结束")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(Color.appInk)
-                                    .frame(width: 76, height: 52)
-                                    .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            }
+                            .buttonStyle(.plain)
                         }
+                    }
                     }
                     .padding(20)
                     .appCard()
@@ -354,6 +384,7 @@ struct HealthView: View {
 
 struct RoutesView: View {
     @ObservedObject var routeStore: RouteStore
+    let onFollow: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -370,11 +401,11 @@ struct RoutesView: View {
                     .font(.system(size: 14))
 
                     ForEach(routeStore.routes) { route in
-                        RouteCard(title: route.name, distance: route.distanceText, detail: "刚刚保存  ·  可再次跟随", tags: ["我的路线", "已保存"])
+                        RouteCard(title: route.name, distance: route.distanceText, detail: "刚刚保存  ·  可再次跟随", tags: ["我的路线", "已保存"], onFollow: onFollow)
                     }
 
-                    RouteCard(title: "公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m", tags: ["环线", "简单", "补水点"])
-                    RouteCard(title: "河岸风景线", distance: "8.1 km", detail: "约 54 分钟  ·  爬升 120 m", tags: ["环线", "中等", "风景优美"])
+                    RouteCard(title: "公园环线", distance: "5.2 km", detail: "约 32 分钟  ·  爬升 80 m", tags: ["环线", "简单", "补水点"], onFollow: onFollow)
+                    RouteCard(title: "河岸风景线", distance: "8.1 km", detail: "约 54 分钟  ·  爬升 120 m", tags: ["环线", "中等", "风景优美"], onFollow: onFollow)
                 }
                 .padding(20)
             }
@@ -388,6 +419,7 @@ struct RouteCard: View {
     let distance: String
     let detail: String
     let tags: [String]
+    let onFollow: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -414,7 +446,7 @@ struct RouteCard: View {
                             .background(Color.appBlue.opacity(0.10), in: Capsule())
                     }
                 }
-                Button {} label: {
+                Button(action: onFollow) {
                     Label("跟随路线", systemImage: "location.north.fill")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
