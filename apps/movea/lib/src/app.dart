@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_design/movea_design.dart';
 import 'package:movea_domain/movea_domain.dart';
@@ -697,7 +697,7 @@ class _MapPreview extends StatelessWidget {
           ),
           const Positioned.fill(
             child: IgnorePointer(
-              child: ColoredBox(color: Color(0x22FFFFFF)),
+              child: ColoredBox(color: Color(0xB3F2F5F3)),
             ),
           ),
           PolylineLayer(
@@ -786,6 +786,119 @@ class _MapMarker extends StatelessWidget {
       child: Icon(icon, color: Colors.white, size: 18),
     );
   }
+}
+
+class _RouteThumbnail extends StatelessWidget {
+  const _RouteThumbnail({required this.points});
+
+  final List<LatLng> points;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: CustomPaint(
+        key: const ValueKey('route-thumbnail'),
+        painter: _RouteThumbnailPainter(points),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _RouteThumbnailPainter extends CustomPainter {
+  _RouteThumbnailPainter(this.points);
+
+  final List<LatLng> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawColor(const Color(0xFFF2F5F3), BlendMode.srcOver);
+
+    final water = Paint()..color = const Color(0xFFDDEEF0);
+    final waterPath = Path()
+      ..moveTo(size.width * .84, -10)
+      ..cubicTo(size.width * .77, size.height * .28, size.width * .92,
+          size.height * .52, size.width * .79, size.height + 10)
+      ..lineTo(size.width + 10, size.height + 10)
+      ..lineTo(size.width + 10, -10)
+      ..close();
+    canvas.drawPath(waterPath, water);
+
+    final localRoad = Paint()
+      ..color = const Color(0xFFDCE5E2)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    for (var index = -2; index < 7; index++) {
+      final x = size.width * index / 6;
+      canvas.drawLine(Offset(x, -10),
+          Offset(x + size.width * .28, size.height + 10), localRoad);
+    }
+    for (var index = 0; index < 5; index++) {
+      final y = size.height * (index + 1) / 5;
+      canvas.drawLine(Offset(-10, y),
+          Offset(size.width + 10, y - size.height * .1), localRoad);
+    }
+
+    final minLat = points
+        .map((point) => point.latitude)
+        .reduce((minimum, value) => value < minimum ? value : minimum);
+    final maxLat = points
+        .map((point) => point.latitude)
+        .reduce((maximum, value) => value > maximum ? value : maximum);
+    final minLon = points
+        .map((point) => point.longitude)
+        .reduce((minimum, value) => value < minimum ? value : minimum);
+    final maxLon = points
+        .map((point) => point.longitude)
+        .reduce((maximum, value) => value > maximum ? value : maximum);
+    final latRange = (maxLat - minLat).abs();
+    final lonRange = (maxLon - minLon).abs();
+    const routePadding = 34.0;
+    final routeWidth = size.width - routePadding * 2;
+    final routeHeight = size.height - routePadding * 2;
+
+    Offset project(LatLng point) {
+      final x = (point.longitude - minLon) / lonRange;
+      final y = 1 - (point.latitude - minLat) / latRange;
+      return Offset(
+          routePadding + x * routeWidth, routePadding + y * routeHeight);
+    }
+
+    final routePath = Path();
+    final first = project(points.first);
+    routePath.moveTo(first.dx, first.dy);
+    for (final point in points.skip(1)) {
+      final offset = project(point);
+      routePath.lineTo(offset.dx, offset.dy);
+    }
+
+    final routeHalo = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 11
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final route = Paint()
+      ..color = moveaBlue
+      ..strokeWidth = 5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(routePath, routeHalo);
+    canvas.drawPath(routePath, route);
+
+    final start = project(points.first);
+    final finish = project(points.last);
+    canvas.drawCircle(start, 10, Paint()..color = moveaCoral);
+    canvas.drawCircle(start, 5, Paint()..color = Colors.white);
+    canvas.drawCircle(finish, 10, Paint()..color = moveaBlue);
+    canvas.drawCircle(finish, 5, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RouteThumbnailPainter oldDelegate) =>
+      oldDelegate.points != points;
 }
 
 class WorkoutHistoryPage extends StatefulWidget {
@@ -1027,7 +1140,8 @@ class _RoutesPageState extends State<RoutesPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(
-                        height: 220, child: _MapPreview(points: _demoRoute)),
+                        height: 180,
+                        child: _RouteThumbnail(points: _demoRoute)),
                     Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(

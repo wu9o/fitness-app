@@ -30,6 +30,7 @@ void main() {
 
     expect(find.text('准备好了吗？'), findsOneWidget);
     expect(find.text('开始跑步'), findsOneWidget);
+    expect(find.byType(FlutterMap), findsOneWidget);
   });
 
   testWidgets('Movea can switch every primary tab', (tester) async {
@@ -42,7 +43,7 @@ void main() {
     await tester.tap(find.text('路线').last);
     await tester.pumpAndSettle();
     expect(find.text('公园环线'), findsOneWidget);
-    expect(find.byType(FlutterMap), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('route-thumbnail')), findsNWidgets(2));
 
     await tester.tap(find.text('学习').last);
     await tester.pumpAndSettle();
