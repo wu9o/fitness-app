@@ -38,35 +38,220 @@ class _MoveaShellState extends State<MoveaShell> {
       RoutesPage(onFollow: openActivity),
       const LearnPage(),
     ];
+    final isWide = MediaQuery.sizeOf(context).width >= 700;
 
     return Scaffold(
-      body:
-          SafeArea(child: IndexedStack(index: selectedIndex, children: pages)),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
-        onDestinationSelected: (index) => setState(() => selectedIndex = index),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home),
-              label: '首页'),
-          NavigationDestination(
-              icon: Icon(Icons.directions_run_outlined),
-              selectedIcon: Icon(Icons.directions_run),
-              label: '运动'),
-          NavigationDestination(
-              icon: Icon(Icons.favorite_border),
-              selectedIcon: Icon(Icons.favorite),
-              label: '健康'),
-          NavigationDestination(
-              icon: Icon(Icons.map_outlined),
-              selectedIcon: Icon(Icons.map),
-              label: '路线'),
-          NavigationDestination(
-              icon: Icon(Icons.menu_book_outlined),
-              selectedIcon: Icon(Icons.menu_book),
-              label: '学习'),
-        ],
+      body: isWide
+          ? Row(
+              children: [
+                _MoveaWideNavigation(
+                    selectedIndex: selectedIndex,
+                    onSelected: (index) =>
+                        setState(() => selectedIndex = index)),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: SafeArea(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1280),
+                        child:
+                            IndexedStack(index: selectedIndex, children: pages),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : SafeArea(
+              child: IndexedStack(index: selectedIndex, children: pages)),
+      bottomNavigationBar: isWide
+          ? null
+          : NavigationBar(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: (index) =>
+                  setState(() => selectedIndex = index),
+              destinations: const [
+                NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home),
+                    label: '首页'),
+                NavigationDestination(
+                    icon: Icon(Icons.directions_run_outlined),
+                    selectedIcon: Icon(Icons.directions_run),
+                    label: '运动'),
+                NavigationDestination(
+                    icon: Icon(Icons.favorite_border),
+                    selectedIcon: Icon(Icons.favorite),
+                    label: '健康'),
+                NavigationDestination(
+                    icon: Icon(Icons.map_outlined),
+                    selectedIcon: Icon(Icons.map),
+                    label: '路线'),
+                NavigationDestination(
+                    icon: Icon(Icons.menu_book_outlined),
+                    selectedIcon: Icon(Icons.menu_book),
+                    label: '学习'),
+              ],
+            ),
+    );
+  }
+}
+
+class _MoveaWideNavigation extends StatelessWidget {
+  const _MoveaWideNavigation(
+      {required this.selectedIndex, required this.onSelected});
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final extended = MediaQuery.sizeOf(context).width >= 1100;
+    return Container(
+      width: extended ? 232 : 88,
+      color: Colors.white,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  extended ? 22 : 16, 20, extended ? 22 : 16, 16),
+              child: Row(
+                mainAxisAlignment: extended
+                    ? MainAxisAlignment.start
+                    : MainAxisAlignment.center,
+                children: [
+                  const CircleAvatar(
+                      radius: 18,
+                      backgroundColor: moveaCoral,
+                      child: Icon(Icons.route, color: Colors.white, size: 20)),
+                  if (extended) ...[
+                    const SizedBox(width: 10),
+                    const Text('动迹',
+                        style: TextStyle(
+                            color: moveaInk,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800)),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+                children: [
+                  _WideNavigationItem(
+                      icon: Icons.home_outlined,
+                      selectedIcon: Icons.home,
+                      label: '首页',
+                      selected: selectedIndex == 0,
+                      extended: extended,
+                      onTap: () => onSelected(0)),
+                  _WideNavigationItem(
+                      icon: Icons.directions_run_outlined,
+                      selectedIcon: Icons.directions_run,
+                      label: '运动',
+                      selected: selectedIndex == 1,
+                      extended: extended,
+                      onTap: () => onSelected(1)),
+                  _WideNavigationItem(
+                      icon: Icons.favorite_border,
+                      selectedIcon: Icons.favorite,
+                      label: '健康',
+                      selected: selectedIndex == 2,
+                      extended: extended,
+                      onTap: () => onSelected(2)),
+                  _WideNavigationItem(
+                      icon: Icons.map_outlined,
+                      selectedIcon: Icons.map,
+                      label: '路线',
+                      selected: selectedIndex == 3,
+                      extended: extended,
+                      onTap: () => onSelected(3)),
+                  _WideNavigationItem(
+                      icon: Icons.menu_book_outlined,
+                      selectedIcon: Icons.menu_book,
+                      label: '学习',
+                      selected: selectedIndex == 4,
+                      extended: extended,
+                      onTap: () => onSelected(4)),
+                ],
+              ),
+            ),
+            if (extended)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text('个人运动与健康',
+                    style: TextStyle(fontSize: 12, color: Colors.black45)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WideNavigationItem extends StatelessWidget {
+  const _WideNavigationItem(
+      {required this.icon,
+      required this.selectedIcon,
+      required this.label,
+      required this.selected,
+      required this.extended,
+      required this.onTap});
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final bool extended;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Tooltip(
+        message: label,
+        child: Material(
+          color: Colors.white,
+          child: ListTile(
+            onTap: onTap,
+            selected: selected,
+            selectedColor: moveaCoral,
+            tileColor: selected ? const Color(0xFFFFE8E2) : null,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            contentPadding: EdgeInsets.symmetric(
+                horizontal: extended ? 14 : 20, vertical: 4),
+            leading: Icon(selected ? selectedIcon : icon),
+            title: extended
+                ? Text(label,
+                    style: const TextStyle(fontWeight: FontWeight.w700))
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MoveaContentFrame extends StatelessWidget {
+  const MoveaContentFrame(
+      {required this.child, this.maxWidth = 760, super.key});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: child,
       ),
     );
   }
@@ -94,100 +279,103 @@ class HomePage extends StatelessWidget {
             ? '${outdoorDistance.toStringAsFixed(1)} km'
             : '${store.recordCount} 次';
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-          children: [
-            Text('今天想动一动吗？',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineMedium
-                    ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
-            const SizedBox(height: 4),
-            const Text('更健康的你，从今天开始', style: TextStyle(color: Colors.black54)),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onStart,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('开始运动',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
-              style: FilledButton.styleFrom(
-                  backgroundColor: moveaCoral,
-                  minimumSize: const Size.fromHeight(58),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18))),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                const Expanded(
-                    child: _MetricCard(
-                        title: '昨晚睡眠',
-                        value: '7h 32m',
-                        note: '睡得不错',
-                        color: moveaMint)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InkWell(
-                    onTap: onHistory,
-                    borderRadius: BorderRadius.circular(20),
-                    child: _MetricCard(
-                        title: '本周运动',
-                        value: weeklyValue,
-                        note: '查看全部记录',
-                        color: moveaLemon),
+        return MoveaContentFrame(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+            children: [
+              Text('今天想动一动吗？',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
+              const SizedBox(height: 4),
+              const Text('更健康的你，从今天开始',
+                  style: TextStyle(color: Colors.black54)),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: onStart,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('开始运动',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                style: FilledButton.styleFrom(
+                    backgroundColor: moveaCoral,
+                    minimumSize: const Size.fromHeight(58),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18))),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Expanded(
+                      child: _MetricCard(
+                          title: '昨晚睡眠',
+                          value: '7h 32m',
+                          note: '睡得不错',
+                          color: moveaMint)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: InkWell(
+                      onTap: onHistory,
+                      borderRadius: BorderRadius.circular(20),
+                      child: _MetricCard(
+                          title: '本周运动',
+                          value: weeklyValue,
+                          note: '查看全部记录',
+                          color: moveaLemon),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const MoveaSectionTitle('本周进度', action: '4 / 7 天'),
+              const SizedBox(height: 10),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(
+                          7,
+                          (index) => _DayDot(
+                              label: '一二三四五六日'[index], active: index < 4))),
+                ),
+              ),
+              const SizedBox(height: 24),
+              MoveaSectionTitle(records.isEmpty ? '为你推荐' : '最近运动',
+                  action: records.isEmpty ? null : '共 ${records.length} 次'),
+              const SizedBox(height: 10),
+              if (records.isEmpty)
+                Card(
+                  color: moveaLemon,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(16),
+                    leading: const CircleAvatar(
+                        backgroundColor: moveaCoral,
+                        child: Icon(Icons.directions_run, color: Colors.white)),
+                    title: const Text('轻松跑 30 分钟',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: const Text('放松身体，保持节奏'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: onStart,
+                  ),
+                )
+              else
+                for (final record in records.take(3))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _RecentWorkoutCard(record: record),
+                  ),
+              if (records.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: onHistory,
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('查看全部运动记录'),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const MoveaSectionTitle('本周进度', action: '4 / 7 天'),
-            const SizedBox(height: 10),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: List.generate(
-                        7,
-                        (index) => _DayDot(
-                            label: '一二三四五六日'[index], active: index < 4))),
-              ),
-            ),
-            const SizedBox(height: 24),
-            MoveaSectionTitle(records.isEmpty ? '为你推荐' : '最近运动',
-                action: records.isEmpty ? null : '共 ${records.length} 次'),
-            const SizedBox(height: 10),
-            if (records.isEmpty)
-              Card(
-                color: moveaLemon,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(16),
-                  leading: const CircleAvatar(
-                      backgroundColor: moveaCoral,
-                      child: Icon(Icons.directions_run, color: Colors.white)),
-                  title: const Text('轻松跑 30 分钟',
-                      style: TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: const Text('放松身体，保持节奏'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: onStart,
-                ),
-              )
-            else
-              for (final record in records.take(3))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _RecentWorkoutCard(record: record),
-                ),
-            if (records.isNotEmpty)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: onHistory,
-                  icon: const Icon(Icons.arrow_forward),
-                  label: const Text('查看全部运动记录'),
-                ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -366,89 +554,99 @@ class _ActivityPageState extends State<ActivityPage> {
           const ColoredBox(color: moveaPaper),
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Row(children: [
-                  Text(activity.usesLocation ? 'GPS 待接入' : '室内训练',
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const Spacer(),
-                  Text(activity.label,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                ]),
-                if (!recording) ...[
-                  const SizedBox(height: 14),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                        children: ActivityType.values
-                            .map((type) => Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ChoiceChip(
-                                      label: Text('${type.icon} ${type.label}'),
-                                      selected: activity == type,
-                                      onSelected: (_) =>
-                                          setState(() => activity = type)),
-                                ))
-                            .toList()),
-                  ),
-                ],
-                const SizedBox(height: 18),
-                if (recording) ...[
-                  if (activity.usesLocation)
-                    const Text('0.00 km',
-                        style: TextStyle(
-                            fontSize: 46,
-                            fontWeight: FontWeight.w800,
-                            color: moveaInk))
-                  else
-                    Text(activity.icon, style: const TextStyle(fontSize: 42)),
-                  const SizedBox(height: 10),
-                  Text(formatDuration(elapsed),
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    Expanded(
-                        child: FilledButton.icon(
-                            onPressed: togglePause,
-                            icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-                            label: Text(paused ? '继续' : '暂停'),
-                            style: FilledButton.styleFrom(
-                                backgroundColor: moveaCoral))),
-                    const SizedBox(width: 10),
-                    OutlinedButton(onPressed: finish, child: const Text('结束')),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Row(children: [
+                      Text(activity.usesLocation ? 'GPS 待接入' : '室内训练',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const Spacer(),
+                      Text(activity.label,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ]),
+                    if (!recording) ...[
+                      const SizedBox(height: 14),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                            children: ActivityType.values
+                                .map((type) => Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: ChoiceChip(
+                                          label: Text(
+                                              '${type.icon} ${type.label}'),
+                                          selected: activity == type,
+                                          onSelected: (_) =>
+                                              setState(() => activity = type)),
+                                    ))
+                                .toList()),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    if (recording) ...[
+                      if (activity.usesLocation)
+                        const Text('0.00 km',
+                            style: TextStyle(
+                                fontSize: 46,
+                                fontWeight: FontWeight.w800,
+                                color: moveaInk))
+                      else
+                        Text(activity.icon,
+                            style: const TextStyle(fontSize: 42)),
+                      const SizedBox(height: 10),
+                      Text(formatDuration(elapsed),
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 16),
+                      Row(children: [
+                        Expanded(
+                            child: FilledButton.icon(
+                                onPressed: togglePause,
+                                icon: Icon(
+                                    paused ? Icons.play_arrow : Icons.pause),
+                                label: Text(paused ? '继续' : '暂停'),
+                                style: FilledButton.styleFrom(
+                                    backgroundColor: moveaCoral))),
+                        const SizedBox(width: 10),
+                        OutlinedButton(
+                            onPressed: finish, child: const Text('结束')),
+                      ]),
+                    ] else ...[
+                      Text(activity.icon, style: const TextStyle(fontSize: 44)),
+                      const SizedBox(height: 8),
+                      const Text('准备好了吗？',
+                          style: TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 5),
+                      Text(
+                          activity.usesLocation
+                              ? '开始后将记录你的路线和运动数据'
+                              : '开始后将记录你的训练时长',
+                          style: const TextStyle(color: Colors.black54)),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                          onPressed: start,
+                          icon: const Icon(Icons.play_arrow),
+                          label: Text('开始${activity.label}'),
+                          style: FilledButton.styleFrom(
+                              backgroundColor: moveaCoral,
+                              minimumSize: const Size.fromHeight(50))),
+                      TextButton.icon(
+                          onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      WorkoutHistoryPage(store: widget.store))),
+                          icon: const Icon(Icons.list_alt),
+                          label: const Text('查看全部运动记录')),
+                    ],
                   ]),
-                ] else ...[
-                  Text(activity.icon, style: const TextStyle(fontSize: 44)),
-                  const SizedBox(height: 8),
-                  const Text('准备好了吗？',
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 5),
-                  Text(
-                      activity.usesLocation
-                          ? '开始后将记录你的路线和运动数据'
-                          : '开始后将记录你的训练时长',
-                      style: const TextStyle(color: Colors.black54)),
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                      onPressed: start,
-                      icon: const Icon(Icons.play_arrow),
-                      label: Text('开始${activity.label}'),
-                      style: FilledButton.styleFrom(
-                          backgroundColor: moveaCoral,
-                          minimumSize: const Size.fromHeight(50))),
-                  TextButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  WorkoutHistoryPage(store: widget.store))),
-                      icon: const Icon(Icons.list_alt),
-                      label: const Text('查看全部运动记录')),
-                ],
-              ]),
+                ),
+              ),
             ),
           ),
         ),
@@ -565,71 +763,74 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                   .where((record) => record.activity == filter)
                   .toList();
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
-            children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _HistoryFilter(
-                      label: '全部',
-                      selected: filter == null,
-                      onSelected: () => setState(() => filter = null),
-                    ),
-                    for (final type in ActivityType.values)
+          return MoveaContentFrame(
+            maxWidth: 840,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
                       _HistoryFilter(
-                        label: type.label,
-                        selected: filter == type,
-                        onSelected: () => setState(() => filter = type),
+                        label: '全部',
+                        selected: filter == null,
+                        onSelected: () => setState(() => filter = null),
                       ),
-                  ],
+                      for (final type in ActivityType.values)
+                        _HistoryFilter(
+                          label: type.label,
+                          selected: filter == type,
+                          onSelected: () => setState(() => filter = type),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              if (records.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 80),
-                  child: Center(child: Text('还没有符合条件的运动记录')),
-                )
-              else
-                for (final record in records)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Card(
-                      child: ListTile(
-                        key: ValueKey('history-record-${record.id}'),
-                        leading: CircleAvatar(
-                          backgroundColor: moveaCoral.withValues(alpha: .12),
-                          child: Text(record.activity.icon),
-                        ),
-                        title: Text(
-                          record.activity.label,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: Text(
-                          '${record.startedAt.month}月${record.startedAt.day}日  ·  ${record.sourceDevice}',
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              formatDuration(record.duration),
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            Text(
-                              record.distanceLabel,
-                              style: const TextStyle(
-                                  fontSize: 12, color: Colors.black54),
-                            ),
-                          ],
+                const SizedBox(height: 14),
+                if (records.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 80),
+                    child: Center(child: Text('还没有符合条件的运动记录')),
+                  )
+                else
+                  for (final record in records)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Card(
+                        child: ListTile(
+                          key: ValueKey('history-record-${record.id}'),
+                          leading: CircleAvatar(
+                            backgroundColor: moveaCoral.withValues(alpha: .12),
+                            child: Text(record.activity.icon),
+                          ),
+                          title: Text(
+                            record.activity.label,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            '${record.startedAt.month}月${record.startedAt.day}日  ·  ${record.sourceDevice}',
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                formatDuration(record.duration),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                record.distanceLabel,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.black54),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -663,59 +864,63 @@ class HealthPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(padding: const EdgeInsets.all(20), children: [
-      Text('健康',
-          style: Theme.of(context)
-              .textTheme
-              .headlineMedium
-              ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
-      const Text('了解身体，跑得更远', style: TextStyle(color: Colors.black54)),
-      const SizedBox(height: 18),
-      Card(
-          color: moveaMint,
-          child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text('昨晚睡眠', style: TextStyle(fontWeight: FontWeight.w700)),
-                    SizedBox(height: 8),
-                    Text('7h 32m',
-                        style: TextStyle(
-                            fontSize: 42,
-                            fontWeight: FontWeight.w800,
-                            color: moveaInk)),
-                    Text('睡眠质量：不错', style: TextStyle(color: Colors.black54))
-                  ]))),
-      const SizedBox(height: 18),
-      const MoveaSectionTitle('近 7 天睡眠时长', action: '平均 7h 12m'),
-      const SizedBox(height: 12),
-      Card(
-          child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: SizedBox(
-                  height: 150,
-                  child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        for (final height in [
-                          62.0,
-                          78.0,
-                          92.0,
-                          70.0,
-                          84.0,
-                          90.0,
-                          100.0
-                        ])
-                          Container(
-                              width: 25,
-                              height: height,
-                              decoration: BoxDecoration(
-                                  color: moveaMint,
-                                  borderRadius: BorderRadius.circular(8)))
-                      ])))),
-    ]);
+    return MoveaContentFrame(
+      maxWidth: 820,
+      child: ListView(padding: const EdgeInsets.all(20), children: [
+        Text('健康',
+            style: Theme.of(context)
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
+        const Text('了解身体，跑得更远', style: TextStyle(color: Colors.black54)),
+        const SizedBox(height: 18),
+        Card(
+            color: moveaMint,
+            child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text('昨晚睡眠',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      SizedBox(height: 8),
+                      Text('7h 32m',
+                          style: TextStyle(
+                              fontSize: 42,
+                              fontWeight: FontWeight.w800,
+                              color: moveaInk)),
+                      Text('睡眠质量：不错', style: TextStyle(color: Colors.black54))
+                    ]))),
+        const SizedBox(height: 18),
+        const MoveaSectionTitle('近 7 天睡眠时长', action: '平均 7h 12m'),
+        const SizedBox(height: 12),
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: SizedBox(
+                    height: 150,
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          for (final height in [
+                            62.0,
+                            78.0,
+                            92.0,
+                            70.0,
+                            84.0,
+                            90.0,
+                            100.0
+                          ])
+                            Container(
+                                width: 25,
+                                height: height,
+                                decoration: BoxDecoration(
+                                    color: moveaMint,
+                                    borderRadius: BorderRadius.circular(8)))
+                        ])))),
+      ]),
+    );
   }
 }
 
@@ -738,66 +943,73 @@ class _RoutesPageState extends State<RoutesPage> {
   @override
   Widget build(BuildContext context) {
     final visible = tab == 2 ? <(String, String, String)>[] : routes;
-    return ListView(padding: const EdgeInsets.all(20), children: [
-      Text('路线',
-          style: Theme.of(context)
-              .textTheme
-              .headlineMedium
-              ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
-      const Text('把喜欢的路线留给下一次', style: TextStyle(color: Colors.black54)),
-      const SizedBox(height: 16),
-      Row(children: [
-        for (var index = 0; index < 3; index++)
-          Padding(
-              padding: const EdgeInsets.only(right: 20),
-              child: TextButton(
-                  onPressed: () => setState(() => tab = index),
-                  child: Text(['推荐', '附近', '我的'][index],
-                      style: TextStyle(
-                          fontWeight: tab == index
-                              ? FontWeight.w800
-                              : FontWeight.normal,
-                          color: tab == index ? moveaBlue : Colors.black54))))
+    return MoveaContentFrame(
+      maxWidth: 980,
+      child: ListView(padding: const EdgeInsets.all(20), children: [
+        Text('路线',
+            style: Theme.of(context)
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
+        const Text('把喜欢的路线留给下一次', style: TextStyle(color: Colors.black54)),
+        const SizedBox(height: 16),
+        Row(children: [
+          for (var index = 0; index < 3; index++)
+            Padding(
+                padding: const EdgeInsets.only(right: 20),
+                child: TextButton(
+                    onPressed: () => setState(() => tab = index),
+                    child: Text(['推荐', '附近', '我的'][index],
+                        style: TextStyle(
+                            fontWeight: tab == index
+                                ? FontWeight.w800
+                                : FontWeight.normal,
+                            color: tab == index ? moveaBlue : Colors.black54))))
+        ]),
+        if (visible.isEmpty)
+          const Padding(
+              padding: EdgeInsets.symmetric(vertical: 80),
+              child: Center(child: Text('还没有保存的路线'))),
+        for (final route in visible)
+          Card(
+              margin: const EdgeInsets.only(bottom: 14),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 130, child: _MapPreview()),
+                    Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Text(route.$1,
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800)),
+                                const Spacer(),
+                                Text(route.$2,
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800))
+                              ]),
+                              const SizedBox(height: 5),
+                              Text(route.$3,
+                                  style:
+                                      const TextStyle(color: Colors.black54)),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                      onPressed: widget.onFollow,
+                                      icon: const Icon(Icons.navigation),
+                                      label: const Text('跟随路线'),
+                                      style: FilledButton.styleFrom(
+                                          backgroundColor: moveaBlue)))
+                            ]))
+                  ])),
       ]),
-      if (visible.isEmpty)
-        const Padding(
-            padding: EdgeInsets.symmetric(vertical: 80),
-            child: Center(child: Text('还没有保存的路线'))),
-      for (final route in visible)
-        Card(
-            margin: const EdgeInsets.only(bottom: 14),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const SizedBox(height: 130, child: _MapPreview()),
-              Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Text(route.$1,
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w800)),
-                          const Spacer(),
-                          Text(route.$2,
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w800))
-                        ]),
-                        const SizedBox(height: 5),
-                        Text(route.$3,
-                            style: const TextStyle(color: Colors.black54)),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                                onPressed: widget.onFollow,
-                                icon: const Icon(Icons.navigation),
-                                label: const Text('跟随路线'),
-                                style: FilledButton.styleFrom(
-                                    backgroundColor: moveaBlue)))
-                      ]))
-            ])),
-    ]);
+    );
   }
 }
 
@@ -836,41 +1048,45 @@ class _LearnPageState extends State<LearnPage> {
       ],
     }[category]!;
 
-    return ListView(padding: const EdgeInsets.all(20), children: [
-      Text('学习',
-          style: Theme.of(context)
-              .textTheme
-              .headlineMedium
-              ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
-      const Text('简单有效，陪你一直动下去', style: TextStyle(color: Colors.black54)),
-      const SizedBox(height: 16),
-      SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-              children: ActivityType.values
-                  .map((type) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                          label: Text(type.label),
-                          selected: category == type,
-                          onSelected: (_) => setState(() => category = type))))
-                  .toList())),
-      const SizedBox(height: 12),
-      for (final lesson in content)
-        Card(
-            color: [
-              moveaLavender,
-              moveaMint,
-              moveaLemon
-            ][content.indexOf(lesson)],
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                title: Text(lesson.$1,
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text(lesson.$2),
-                trailing: const Icon(Icons.play_circle_fill,
-                    color: moveaCoral, size: 32))),
-    ]);
+    return MoveaContentFrame(
+      maxWidth: 820,
+      child: ListView(padding: const EdgeInsets.all(20), children: [
+        Text('学习',
+            style: Theme.of(context)
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
+        const Text('简单有效，陪你一直动下去', style: TextStyle(color: Colors.black54)),
+        const SizedBox(height: 16),
+        SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+                children: ActivityType.values
+                    .map((type) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                            label: Text(type.label),
+                            selected: category == type,
+                            onSelected: (_) =>
+                                setState(() => category = type))))
+                    .toList())),
+        const SizedBox(height: 12),
+        for (final lesson in content)
+          Card(
+              color: [
+                moveaLavender,
+                moveaMint,
+                moveaLemon
+              ][content.indexOf(lesson)],
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                  contentPadding: const EdgeInsets.all(16),
+                  title: Text(lesson.$1,
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(lesson.$2),
+                  trailing: const Icon(Icons.play_circle_fill,
+                      color: moveaCoral, size: 32))),
+      ]),
+    );
   }
 }
