@@ -1,28 +1,105 @@
-# MoveLog
+# 动迹 Movea
 
-Personal iPhone sports and health app concept implemented with SwiftUI.
+面向个人使用的多设备运动与健康记录应用。
 
-## Current scope
+Movea 记录跑步、骑行、拉伸、力量训练、睡眠和健康数据，目标是让同一套个人数据可以在 iPhone、iPad、Mac、Apple Watch 和 Android 之间自然流动。
 
-- Light Active Editorial visual system
-- Home, activity, health, routes and learning tabs
-- Demo route map and sleep/activity data
-- Private GitHub sync entry point (UI only in this first slice)
+> 当前仓库正在从早期 SwiftUI 原型迁移到 Flutter 主应用 + 原生 Apple Watch 模块的跨平台架构。现有 SwiftUI 代码保留在 `legacy/swiftui-prototype`，用于对照原有交互和视觉稿。
 
-## Next integration slices
+## 产品方向
 
-The current source includes the first integration pass for all three areas:
+- 记录：运动过程、GPS 路线、运动时长和训练类型
+- 复用：保存路线，并在下一次运动时跟随路线
+- 了解：睡眠、恢复状态和运动趋势
+- 学习：跑步、骑行、拉伸和力量训练知识
+- 同步：本地优先，使用端到端加密数据备份到个人 GitHub 私密仓库
+- 多端：手机负责完整体验，Mac/iPad 负责查看和分析，Apple Watch 负责运动中的快速记录
 
-- HealthKit sleep read authorization and recent sleep aggregation
-- Core Location background route recording with local route persistence
-- GitHub OAuth with PKCE and client-side AES-GCM backup upload
+## 目标设备
 
-Before testing GitHub login, replace `GitHubOAuthClientID` in `FitnessApp/Info.plist` with the Client ID of a GitHub OAuth App configured with the callback `movelog://oauth/callback`.
+| 设备 | 目标体验 | 实现方式 |
+| --- | --- | --- |
+| iPhone | 完整运动、健康和路线体验 | Flutter |
+| iPad | 分栏查看记录、路线和健康趋势 | Flutter 自适应布局 |
+| Mac | 历史记录、趋势分析和数据管理 | Flutter macOS |
+| Android | 运动记录、路线和健康数据 | Flutter |
+| Apple Watch | 独立开始/暂停/结束运动、心率和定位 | 原生 watchOS / SwiftUI |
 
-## Next integration slices
+## 技术架构
 
-1. HealthKit workout write-back and Apple Watch support
-2. Route following with deviation alerts and offline behavior
-3. Full backup manifest, recovery key flow and encrypted workout history
+```text
+                    +-----------------------+
+                    |       Movea API       |
+                    |  domain / sync / auth |
+                    +-----------+-----------+
+                                |
+             +------------------+------------------+
+             |                                     |
+  +----------v-----------+              +----------v-----------+
+  | Flutter applications |              | Native Watch target  |
+  | iPhone / iPad / Mac  |              | watchOS workout      |
+  | Android              |              | HealthKit / sensors  |
+  +----------+-----------+              +----------+-----------+
+             |                                     |
+  +----------v-----------+              +----------v-----------+
+  | Platform adapters    |              | Watch Connectivity   |
+  | Health / location    |<------------>| iPhone companion     |
+  +----------------------+              +----------------------+
+```
 
-The app is intentionally local/demo-first until those integrations are wired and verified on a physical iPhone.
+- Flutter/Dart：共享主要界面、导航、领域模型、记录和同步流程
+- 平台适配层：隔离 HealthKit、Health Connect、Core Location 和 Android Location
+- Apple Watch：使用 watchOS Workout Session，避免把低功耗传感器能力塞进跨平台 UI
+- 数据层：SQLite/本地文件作为本地数据源，GitHub 私密仓库作为加密备份，不作为实时数据库
+
+## 数据与隐私
+
+运动和健康数据默认保存在设备本地。上传 GitHub 前先在设备端加密，私密仓库只保存加密备份文件和版本清单。
+
+当前阶段不会把 GitHub token 或明文健康数据写入仓库。跨设备同步需要处理 OAuth token 安全、冲突合并、离线重试和恢复密钥，这些会在同步模块中单独设计和测试。
+
+## 仓库结构
+
+```text
+fitness-app/
+├── apps/
+│   └── movea/                 # Flutter 主应用：iOS / iPadOS / macOS / Android
+├── packages/
+│   ├── movea_domain/           # 运动、路线、睡眠和记录领域模型
+│   ├── movea_data/             # 本地存储、加密备份和同步接口
+│   └── movea_design/           # 颜色、字体、组件和响应式设计 token
+├── watchos/
+│   └── MoveaWatch/             # 原生 Apple Watch companion target
+├── docs/
+│   ├── product.md              # 产品边界和核心流程
+│   ├── architecture.md         # 跨端架构和数据边界
+│   └── development.md          # 本地开发与验证方式
+├── legacy/
+│   └── swiftui-prototype/      # 第一版 SwiftUI 原型，仅作迁移参考
+└── README.md
+```
+
+## 迁移路线
+
+1. 完成 Flutter 工程和共享领域模型
+2. 迁移首页、运动、健康、路线和学习流程
+3. 加入 iPad 分栏布局和 macOS 键鼠交互
+4. 接入 Android 定位和 Health Connect
+5. 加入独立 Apple Watch workout session
+6. 完成加密 GitHub 备份、冲突合并和恢复流程
+7. 用真实 iPhone、Apple Watch 和 Android 设备完成发布前验证
+
+## 当前状态
+
+- SwiftUI 原型：可运行，用于保留已确认的视觉和交互参考
+- Flutter 主应用：迁移中
+- Apple Watch：架构和数据协议设计中
+- GitHub 加密同步：已有概念验证，尚未作为正式数据层发布
+
+## 开发原则
+
+- 先定义跨端领域模型，再实现平台界面
+- 所有平台能力都通过 adapter 隔离
+- 运动记录必须可离线创建和读取
+- 真实健康数据与演示数据必须明确区分
+- 每个端都要做 UI 走查，不以单一 iPhone 模拟器通过作为完成标准

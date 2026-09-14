@@ -1,0 +1,11 @@
+name: movea_data
+description: Local-first stores and platform ports for Movea.
+publish_to: none
+version: 0.1.0
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  movea_domain:
+    path: ../movea_domain

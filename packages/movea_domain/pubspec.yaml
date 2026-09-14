@@ -1,0 +1,6 @@
+name: movea_domain
+description: Shared domain models for Movea.
+publish_to: none
+version: 0.1.0
+environment:
+  sdk: '>=3.3.0 <4.0.0'
