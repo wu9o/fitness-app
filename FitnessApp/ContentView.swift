@@ -575,3 +575,7 @@ struct SyncRow: View {
         .appCard()
     }
 }
+
+#Preview {
+    ContentView()
+}
