@@ -1769,6 +1769,27 @@ class _DeviceWorkoutImportPageState extends State<DeviceWorkoutImportPage> {
                 record.sourceWorkoutId == candidate.sourceWorkoutId),
       );
 
+  WorkoutRecord? importedRecord(WorkoutRecord candidate) {
+    for (final record in widget.store.records) {
+      if (record.id == candidate.id ||
+          (candidate.sourceWorkoutId != null &&
+              record.sourceWorkoutId == candidate.sourceWorkoutId)) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  bool needsUpdate(WorkoutRecord candidate) {
+    final imported = importedRecord(candidate);
+    if (imported == null) return false;
+    return imported.heartRateSamples.length !=
+            candidate.heartRateSamples.length ||
+        imported.averageHeartRateBpm != candidate.averageHeartRateBpm ||
+        imported.maximumHeartRateBpm != candidate.maximumHeartRateBpm ||
+        imported.activeEnergyKilocalories != candidate.activeEnergyKilocalories;
+  }
+
   Future<void> load() async {
     setState(() {
       loading = true;
@@ -1793,13 +1814,15 @@ class _DeviceWorkoutImportPageState extends State<DeviceWorkoutImportPage> {
     if (!mounted) return;
     setState(() => importing = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(count == 0 ? '没有新的设备运动可导入' : '已导入 $count 条设备运动'),
+      content: Text(count == 0 ? '设备运动已是最新' : '已同步 $count 条设备运动'),
     ));
   }
 
   @override
   Widget build(BuildContext context) {
-    final pending = candidates.where((record) => !isImported(record)).toList();
+    final pending = candidates
+        .where((record) => !isImported(record) || needsUpdate(record))
+        .toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('设备运动'),
@@ -1943,7 +1966,14 @@ class _DeviceWorkoutImportPageState extends State<DeviceWorkoutImportPage> {
                       ),
                       isThreeLine: true,
                       trailing: isImported(record)
-                          ? const Chip(label: Text('已导入'))
+                          ? needsUpdate(record)
+                              ? TextButton(
+                                  onPressed: importing
+                                      ? null
+                                      : () => importRecords([record]),
+                                  child: const Text('更新'),
+                                )
+                              : const Chip(label: Text('已同步'))
                           : TextButton(
                               onPressed: importing
                                   ? null
@@ -5135,6 +5165,7 @@ class WorkoutHistoryPage extends StatefulWidget {
 
 class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
   ActivityType? filter;
+  WorkoutDataSource? sourceFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -5143,11 +5174,11 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
       body: AnimatedBuilder(
         animation: widget.store,
         builder: (context, _) {
-          final records = filter == null
-              ? widget.store.records
-              : widget.store.records
-                  .where((record) => record.activity == filter)
-                  .toList();
+          final records = widget.store.records
+              .where((record) => filter == null || record.activity == filter)
+              .where((record) =>
+                  sourceFilter == null || record.dataSource == sourceFilter)
+              .toList(growable: false);
 
           return MoveaContentFrame(
             maxWidth: 840,
@@ -5172,7 +5203,31 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _HistoryFilter(
+                        label: '全部来源',
+                        selected: sourceFilter == null,
+                        onSelected: () => setState(() => sourceFilter = null),
+                      ),
+                      for (final source in WorkoutDataSource.values)
+                        _HistoryFilter(
+                          label: source.label,
+                          selected: sourceFilter == source,
+                          onSelected: () =>
+                              setState(() => sourceFilter = source),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text('${records.length} 条记录',
+                    style:
+                        const TextStyle(fontSize: 12, color: Colors.black54)),
+                const SizedBox(height: 10),
                 if (records.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 80),
@@ -5202,7 +5257,7 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: Text(
-                            '${record.startedAt.month}月${record.startedAt.day}日  ·  ${record.sourceDevice}',
+                            '${record.startedAt.month}月${record.startedAt.day}日  ·  ${record.dataSource == WorkoutDataSource.localGps ? record.sourceDevice : '${record.dataSource.label} · ${record.sourceDevice}'}',
                           ),
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -5435,6 +5490,10 @@ class WorkoutDetailPage extends StatelessWidget {
                       value: '${record.activeEnergyKilocalories!.round()} 千卡'),
               ],
             ),
+            if (record.heartRateSamples.length > 1) ...[
+              const SizedBox(height: 18),
+              _HeartRateAnalysisCard(record: record),
+            ],
             const SizedBox(height: 18),
             _WorkoutFeedbackCard(
               record: record,
@@ -5866,6 +5925,202 @@ class _SaveRouteDialogState extends State<_SaveRouteDialog> {
       ],
     );
   }
+}
+
+class _HeartRateAnalysisCard extends StatelessWidget {
+  const _HeartRateAnalysisCard({required this.record});
+
+  final WorkoutRecord record;
+
+  String formatBandDuration(Duration value) {
+    final minutes = value.inMinutes;
+    final seconds = value.inSeconds.remainder(60);
+    return minutes > 0
+        ? '$minutes:${seconds.toString().padLeft(2, '0')}'
+        : '${seconds}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bands = record.heartRateBandDurations;
+    final observedSeconds =
+        math.max(1, record.heartRateObservedDuration.inSeconds);
+    final bpmValues = record.heartRateSamples.map((sample) => sample.bpm);
+    final minimum = bpmValues.reduce(math.min).round();
+    final maximum = bpmValues.reduce(math.max).round();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const MoveaSectionTitle('设备心率曲线'),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: Color(0xFFFFE8E2),
+                      child: Icon(Icons.favorite, color: moveaCoral),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('运动中心率变化',
+                              style: TextStyle(
+                                  fontSize: 17, fontWeight: FontWeight.w800)),
+                          Text(
+                              '${record.heartRateSamples.length} 个 HealthKit 采样点',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.black54)),
+                        ],
+                      ),
+                    ),
+                    Text('$minimum–$maximum',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w800)),
+                    const SizedBox(width: 4),
+                    const Text('bpm',
+                        style: TextStyle(fontSize: 11, color: Colors.black54)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 150,
+                  width: double.infinity,
+                  child: CustomPaint(
+                    painter: _HeartRateChartPainter(record.heartRateSamples),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                for (final band in HeartRateBand.values)
+                  if ((bands[band] ?? Duration.zero) > Duration.zero)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 50,
+                            child: Text(band.label,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                          SizedBox(
+                            width: 60,
+                            child: Text(band.rangeLabel,
+                                style: const TextStyle(
+                                    fontSize: 11, color: Colors.black54)),
+                          ),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: LinearProgressIndicator(
+                                minHeight: 8,
+                                value:
+                                    (bands[band]!.inSeconds / observedSeconds)
+                                        .clamp(0, 1),
+                                backgroundColor: Colors.black12,
+                                color: _heartRateBandColor(band),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 42,
+                            child: Text(formatBandDuration(bands[band]!),
+                                textAlign: TextAlign.end,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+                const SizedBox(height: 3),
+                const Text(
+                  '区间采用固定 bpm 分段，仅用于查看本次采样分布，不代表个体化心率区或医疗建议；超过 30 秒的采样空档不会补算。',
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.black45, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Color _heartRateBandColor(HeartRateBand band) {
+  switch (band) {
+    case HeartRateBand.easy:
+      return const Color(0xFF7AC7B4);
+    case HeartRateBand.aerobic:
+      return moveaBlue;
+    case HeartRateBand.tempo:
+      return const Color(0xFFF0B94C);
+    case HeartRateBand.high:
+      return moveaCoral;
+  }
+}
+
+class _HeartRateChartPainter extends CustomPainter {
+  const _HeartRateChartPainter(this.samples);
+
+  final List<HeartRateSample> samples;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (samples.length < 2) return;
+    final values = samples.map((sample) => sample.bpm).toList(growable: false);
+    final minimum = values.reduce(math.min) - 5;
+    final maximum = values.reduce(math.max) + 5;
+    final range = math.max(1.0, maximum - minimum);
+    final maxOffset = math.max(1, samples.last.offset.inMilliseconds);
+
+    final grid = Paint()
+      ..color = Colors.black.withValues(alpha: .07)
+      ..strokeWidth = 1;
+    for (var index = 0; index < 4; index++) {
+      final y = size.height * index / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
+    Offset project(HeartRateSample sample) => Offset(
+          size.width * sample.offset.inMilliseconds / maxOffset,
+          size.height - size.height * (sample.bpm - minimum) / range,
+        );
+    final path = Path()
+      ..moveTo(project(samples.first).dx, project(samples.first).dy);
+    for (final sample in samples.skip(1)) {
+      final point = project(sample);
+      path.lineTo(point.dx, point.dy);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = moveaCoral.withValues(alpha: .13)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 9
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = moveaCoral
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeartRateChartPainter oldDelegate) =>
+      oldDelegate.samples != samples;
 }
 
 class _DetailMetric extends StatelessWidget {

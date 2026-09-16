@@ -149,6 +149,20 @@ class PlatformDeviceWorkoutRepository implements DeviceWorkoutRepository {
       maximumHeartRateBpm: (json['maximumHeartRateBpm'] as num?)?.toDouble(),
       activeEnergyKilocalories:
           (json['activeEnergyKilocalories'] as num?)?.toDouble(),
+      heartRateSamples: (json['heartRateSamples'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((value) => Map<String, dynamic>.from(value))
+          .map(
+            (value) => HeartRateSample(
+              offset: Duration(
+                milliseconds:
+                    (value['offsetMilliseconds'] as num?)?.toInt() ?? 0,
+              ),
+              bpm: (value['bpm'] as num?)?.toDouble() ?? 0,
+            ),
+          )
+          .where((sample) => sample.bpm > 0)
+          .toList(growable: false),
     );
   }
 }

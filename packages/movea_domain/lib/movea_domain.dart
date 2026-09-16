@@ -6,6 +6,50 @@ enum WorkoutEffort { easy, moderate, hard, maximum }
 
 enum WorkoutDataSource { localGps, healthKit, healthConnect, manual }
 
+enum HeartRateBand { easy, aerobic, tempo, high }
+
+extension HeartRateBandLabel on HeartRateBand {
+  String get label {
+    switch (this) {
+      case HeartRateBand.easy:
+        return '轻松';
+      case HeartRateBand.aerobic:
+        return '有氧';
+      case HeartRateBand.tempo:
+        return '节奏';
+      case HeartRateBand.high:
+        return '高强';
+    }
+  }
+
+  String get rangeLabel {
+    switch (this) {
+      case HeartRateBand.easy:
+        return '< 120';
+      case HeartRateBand.aerobic:
+        return '120–139';
+      case HeartRateBand.tempo:
+        return '140–159';
+      case HeartRateBand.high:
+        return '≥ 160';
+    }
+  }
+}
+
+class HeartRateSample {
+  const HeartRateSample({required this.offset, required this.bpm});
+
+  final Duration offset;
+  final double bpm;
+
+  HeartRateBand get band {
+    if (bpm < 120) return HeartRateBand.easy;
+    if (bpm < 140) return HeartRateBand.aerobic;
+    if (bpm < 160) return HeartRateBand.tempo;
+    return HeartRateBand.high;
+  }
+}
+
 extension WorkoutDataSourceLabel on WorkoutDataSource {
   String get label {
     switch (this) {
@@ -99,6 +143,7 @@ class WorkoutRecord {
     this.averageHeartRateBpm,
     this.maximumHeartRateBpm,
     this.activeEnergyKilocalories,
+    this.heartRateSamples = const [],
   });
 
   final String id;
@@ -118,6 +163,7 @@ class WorkoutRecord {
   final double? averageHeartRateBpm;
   final double? maximumHeartRateBpm;
   final double? activeEnergyKilocalories;
+  final List<HeartRateSample> heartRateSamples;
 
   bool get isTrainingPlanRecord => trainingPlanId != null;
 
@@ -129,6 +175,30 @@ class WorkoutRecord {
       averageHeartRateBpm != null ||
       maximumHeartRateBpm != null ||
       activeEnergyKilocalories != null;
+
+  Map<HeartRateBand, Duration> get heartRateBandDurations {
+    final durations = {
+      for (final band in HeartRateBand.values) band: Duration.zero,
+    };
+    if (heartRateSamples.length < 2) return durations;
+    for (var index = 0; index < heartRateSamples.length - 1; index++) {
+      final sample = heartRateSamples[index];
+      final next = heartRateSamples[index + 1];
+      final rawMilliseconds =
+          next.offset.inMilliseconds - sample.offset.inMilliseconds;
+      if (rawMilliseconds <= 0) continue;
+      // A long sampling gap is not evidence that the earlier heart rate held.
+      final milliseconds = math.min(rawMilliseconds, 30000);
+      durations[sample.band] =
+          durations[sample.band]! + Duration(milliseconds: milliseconds);
+    }
+    return durations;
+  }
+
+  Duration get heartRateObservedDuration => heartRateBandDurations.values.fold(
+    Duration.zero,
+    (total, value) => total + value,
+  );
 
   double get planCompletion {
     if (plannedActions <= 0) return 0;
@@ -204,6 +274,7 @@ class WorkoutRecord {
     averageHeartRateBpm: averageHeartRateBpm,
     maximumHeartRateBpm: maximumHeartRateBpm,
     activeEnergyKilocalories: activeEnergyKilocalories,
+    heartRateSamples: heartRateSamples,
   );
 }
 

@@ -41,6 +41,12 @@ class _FakeDeviceWorkoutRepository implements DeviceWorkoutRepository {
           averageHeartRateBpm: 148,
           maximumHeartRateBpm: 171,
           activeEnergyKilocalories: 438,
+          heartRateSamples: const [
+            HeartRateSample(offset: Duration.zero, bpm: 112),
+            HeartRateSample(offset: Duration(seconds: 10), bpm: 132),
+            HeartRateSample(offset: Duration(seconds: 20), bpm: 148),
+            HeartRateSample(offset: Duration(seconds: 30), bpm: 166),
+          ],
         ),
       ];
 }
@@ -242,7 +248,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.records, hasLength(1));
     expect(store.records.single.dataSource, WorkoutDataSource.healthKit);
-    expect(find.text('已导入'), findsOneWidget);
+    expect(store.records.single.heartRateSamples, hasLength(4));
+    expect(find.text('已同步'), findsOneWidget);
   });
 
   testWidgets('Movea settings describe the open map stack', (tester) async {
@@ -303,6 +310,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('全部运动记录'), findsOneWidget);
     expect(find.text('骑行'), findsNWidgets(2));
+    expect(find.byType(ListTile), findsOneWidget);
+
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'HealthKit'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'HealthKit'));
+    await tester.pump();
+    expect(find.text('还没有符合条件的运动记录'), findsOneWidget);
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Movea GPS'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Movea GPS'));
+    await tester.pump();
     expect(find.byType(ListTile), findsOneWidget);
 
     await tester.tap(find.byType(ListTile));
@@ -493,6 +511,10 @@ void main() {
       averageHeartRateBpm: 142,
       maximumHeartRateBpm: 169,
       activeEnergyKilocalories: 512,
+      heartRateSamples: const [
+        HeartRateSample(offset: Duration.zero, bpm: 118),
+        HeartRateSample(offset: Duration(seconds: 12), bpm: 145),
+      ],
     ));
     await Future<void>.delayed(Duration.zero);
 
@@ -518,6 +540,8 @@ void main() {
     expect(restored.records.single.averageHeartRateBpm, 142);
     expect(restored.records.single.maximumHeartRateBpm, 169);
     expect(restored.records.single.activeEnergyKilocalories, 512);
+    expect(restored.records.single.heartRateSamples, hasLength(2));
+    expect(restored.records.single.heartRateSamples.last.bpm, 145);
   });
 
   test('WorkoutStore de-duplicates imported source workouts', () async {
@@ -537,6 +561,77 @@ void main() {
     expect(await store.importAndPersist([imported('first')]), 1);
     expect(await store.importAndPersist([imported('second')]), 0);
     expect(store.records, hasLength(1));
+  });
+
+  test('WorkoutStore enriches a device workout without losing feedback',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = WorkoutStore();
+    await store.restore();
+    final startedAt = DateTime(2026, 9, 15);
+    await store.importAndPersist([
+      WorkoutRecord(
+        id: 'healthkit-enrichment',
+        activity: ActivityType.run,
+        startedAt: startedAt,
+        duration: const Duration(minutes: 30),
+        distanceMeters: 5000,
+        dataSource: WorkoutDataSource.healthKit,
+        sourceWorkoutId: 'enrichment-uuid',
+      ),
+    ]);
+    await store.updateAndPersist(
+      store.records.single.copyWith(perceivedEffort: WorkoutEffort.moderate),
+    );
+
+    final changed = await store.importAndPersist([
+      WorkoutRecord(
+        id: 'healthkit-enrichment',
+        activity: ActivityType.run,
+        startedAt: startedAt,
+        duration: const Duration(minutes: 30),
+        distanceMeters: 5000,
+        dataSource: WorkoutDataSource.healthKit,
+        sourceWorkoutId: 'enrichment-uuid',
+        averageHeartRateBpm: 146,
+        heartRateSamples: const [
+          HeartRateSample(offset: Duration.zero, bpm: 132),
+          HeartRateSample(offset: Duration(seconds: 10), bpm: 146),
+        ],
+      ),
+    ]);
+
+    expect(changed, 1);
+    expect(store.records.single.averageHeartRateBpm, 146);
+    expect(store.records.single.heartRateSamples, hasLength(2));
+    expect(store.records.single.perceivedEffort, WorkoutEffort.moderate);
+  });
+
+  test('Heart rate samples produce bounded observed band durations', () {
+    final record = WorkoutRecord(
+      id: 'heart-rate-bands',
+      activity: ActivityType.run,
+      startedAt: DateTime(2026, 9, 16),
+      duration: const Duration(minutes: 10),
+      distanceMeters: 1800,
+      heartRateSamples: const [
+        HeartRateSample(offset: Duration.zero, bpm: 110),
+        HeartRateSample(offset: Duration(seconds: 10), bpm: 128),
+        HeartRateSample(offset: Duration(seconds: 25), bpm: 148),
+        HeartRateSample(offset: Duration(minutes: 2), bpm: 168),
+        HeartRateSample(offset: Duration(minutes: 2, seconds: 20), bpm: 165),
+      ],
+    );
+
+    expect(record.heartRateBandDurations[HeartRateBand.easy],
+        const Duration(seconds: 10));
+    expect(record.heartRateBandDurations[HeartRateBand.aerobic],
+        const Duration(seconds: 15));
+    expect(record.heartRateBandDurations[HeartRateBand.tempo],
+        const Duration(seconds: 30));
+    expect(record.heartRateBandDurations[HeartRateBand.high],
+        const Duration(seconds: 20));
+    expect(record.heartRateObservedDuration, const Duration(seconds: 75));
   });
 
   test('ActiveWorkoutStore restores an unfinished GPS workout', () async {
@@ -806,6 +901,41 @@ void main() {
     expect(find.text('分段配速'), findsOneWidget);
     expect(find.text('1 km'), findsOneWidget);
     expect(find.text('最后'), findsOneWidget);
+  });
+
+  testWidgets('Workout detail renders real heart rate samples', (tester) async {
+    final record = WorkoutRecord(
+      id: 'heart-rate-detail',
+      activity: ActivityType.run,
+      startedAt: DateTime(2026, 9, 15, 8),
+      duration: const Duration(minutes: 30),
+      distanceMeters: 5000,
+      dataSource: WorkoutDataSource.healthKit,
+      sourceWorkoutId: 'heart-rate-detail',
+      averageHeartRateBpm: 145,
+      maximumHeartRateBpm: 169,
+      heartRateSamples: const [
+        HeartRateSample(offset: Duration.zero, bpm: 112),
+        HeartRateSample(offset: Duration(minutes: 5), bpm: 132),
+        HeartRateSample(offset: Duration(minutes: 12), bpm: 148),
+        HeartRateSample(offset: Duration(minutes: 20), bpm: 165),
+        HeartRateSample(offset: Duration(minutes: 29), bpm: 142),
+      ],
+    );
+
+    await tester
+        .pumpWidget(MaterialApp(home: WorkoutDetailPage(record: record)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('设备心率曲线'),
+      320,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('设备心率曲线'), findsOneWidget);
+    expect(find.text('5 个 HealthKit 采样点'), findsOneWidget);
+    expect(find.text('轻松'), findsOneWidget);
+    expect(find.text('高强'), findsOneWidget);
   });
 
   testWidgets('Workout feedback persists subjective training load',

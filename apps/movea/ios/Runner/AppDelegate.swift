@@ -75,7 +75,7 @@ import UIKit
     let query = HKSampleQuery(
       sampleType: HKObjectType.workoutType(),
       predicate: predicate,
-      limit: 100,
+      limit: 50,
       sortDescriptors: [sort]
     ) { [weak self] _, samples, error in
       guard let self else { return }
@@ -85,8 +85,76 @@ import UIKit
         }
         return
       }
-      let workouts = (samples as? [HKWorkout] ?? []).compactMap(self.encodeWorkout)
-      DispatchQueue.main.async { result(workouts) }
+      let workouts = (samples as? [HKWorkout] ?? []).compactMap { workout -> (HKWorkout, [String: Any])? in
+        guard let encoded = self.encodeWorkout(workout) else { return nil }
+        return (workout, encoded)
+      }
+      guard !workouts.isEmpty else {
+        DispatchQueue.main.async { result([]) }
+        return
+      }
+      let group = DispatchGroup()
+      let lock = NSLock()
+      var encodedWorkouts: [[String: Any]] = []
+      for (workout, base) in workouts {
+        group.enter()
+        self.readHeartRateSamples(for: workout) { samples in
+          var encoded = base
+          if !samples.isEmpty { encoded["heartRateSamples"] = samples }
+          lock.lock()
+          encodedWorkouts.append(encoded)
+          lock.unlock()
+          group.leave()
+        }
+      }
+      group.notify(queue: .main) {
+        encodedWorkouts.sort {
+          ($0["startedAt"] as? String ?? "") > ($1["startedAt"] as? String ?? "")
+        }
+        result(encodedWorkouts)
+      }
+    }
+    healthStore.execute(query)
+  }
+
+  private func readHeartRateSamples(
+    for workout: HKWorkout,
+    completion: @escaping ([[String: Any]]) -> Void
+  ) {
+    guard let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+      completion([])
+      return
+    }
+    let predicate = HKQuery.predicateForObjects(from: workout)
+    let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+    let query = HKSampleQuery(
+      sampleType: heartRateType,
+      predicate: predicate,
+      limit: 5000,
+      sortDescriptors: [sort]
+    ) { _, samples, _ in
+      let values = (samples as? [HKQuantitySample] ?? []).map { sample in
+        (
+          offsetMilliseconds: max(0, Int(sample.startDate.timeIntervalSince(workout.startDate) * 1000)),
+          bpm: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+        )
+      }.filter { $0.bpm > 0 }
+      guard !values.isEmpty else {
+        completion([])
+        return
+      }
+
+      // Keep the curve lightweight while preserving its full time span.
+      let sampleStride = max(1, Int(ceil(Double(values.count) / 360.0)))
+      var encoded = values.enumerated().compactMap { index, value -> [String: Any]? in
+        guard index % sampleStride == 0 else { return nil }
+        return ["offsetMilliseconds": value.offsetMilliseconds, "bpm": value.bpm]
+      }
+      if let last = values.last,
+         encoded.last?["offsetMilliseconds"] as? Int != last.offsetMilliseconds {
+        encoded.append(["offsetMilliseconds": last.offsetMilliseconds, "bpm": last.bpm])
+      }
+      completion(encoded)
     }
     healthStore.execute(query)
   }

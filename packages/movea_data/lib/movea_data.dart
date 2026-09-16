@@ -55,6 +55,15 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
       'maximumHeartRateBpm': record.maximumHeartRateBpm,
     if (record.activeEnergyKilocalories != null)
       'activeEnergyKilocalories': record.activeEnergyKilocalories,
+    if (record.heartRateSamples.isNotEmpty)
+      'heartRateSamples': record.heartRateSamples
+          .map(
+            (sample) => {
+              'offsetMilliseconds': sample.offset.inMilliseconds,
+              'bpm': sample.bpm,
+            },
+          )
+          .toList(growable: false),
   };
 
   static Map<String, dynamic> _encodePoint(LocationPoint point) => {
@@ -128,6 +137,21 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
         maximumHeartRateBpm: (json['maximumHeartRateBpm'] as num?)?.toDouble(),
         activeEnergyKilocalories: (json['activeEnergyKilocalories'] as num?)
             ?.toDouble(),
+        heartRateSamples:
+            (json['heartRateSamples'] as List<dynamic>? ?? const [])
+                .whereType<Map>()
+                .map((value) => Map<String, dynamic>.from(value))
+                .map(
+                  (value) => HeartRateSample(
+                    offset: Duration(
+                      milliseconds:
+                          (value['offsetMilliseconds'] as num?)?.toInt() ?? 0,
+                    ),
+                    bpm: (value['bpm'] as num?)?.toDouble() ?? 0,
+                  ),
+                )
+                .where((sample) => sample.bpm > 0)
+                .toList(growable: false),
       );
     } on Object {
       return null;
@@ -169,30 +193,43 @@ class WorkoutStore extends ChangeNotifier {
 
   Future<int> importAndPersist(Iterable<WorkoutRecord> records) async {
     if (!_isRestored) await restore();
-    final knownIds = _records.map((record) => record.id).toSet();
-    final knownSourceIds = _records
-        .map((record) => record.sourceWorkoutId)
-        .whereType<String>()
-        .toSet();
-    var imported = 0;
+    var changed = 0;
     for (final record in records) {
       final sourceId = record.sourceWorkoutId;
-      if (knownIds.contains(record.id) ||
-          (sourceId != null && knownSourceIds.contains(sourceId))) {
+      final existingIndex = _records.indexWhere(
+        (item) =>
+            item.id == record.id ||
+            (sourceId != null && item.sourceWorkoutId == sourceId),
+      );
+      if (existingIndex >= 0) {
+        final existing = _records[existingIndex];
+        if (!_deviceWorkoutChanged(existing, record)) continue;
+        _records[existingIndex] = record.copyWith(
+          perceivedEffort: existing.perceivedEffort,
+        );
+        changed++;
         continue;
       }
       _records.add(record);
-      knownIds.add(record.id);
-      if (sourceId != null) knownSourceIds.add(sourceId);
-      imported++;
+      changed++;
     }
-    if (imported > 0) {
+    if (changed > 0) {
       _records.sort((a, b) => b.startedAt.compareTo(a.startedAt));
       notifyListeners();
       await _persistence.write(_records);
     }
-    return imported;
+    return changed;
   }
+
+  bool _deviceWorkoutChanged(WorkoutRecord current, WorkoutRecord incoming) =>
+      current.startedAt != incoming.startedAt ||
+      current.duration != incoming.duration ||
+      current.distanceMeters != incoming.distanceMeters ||
+      current.sourceDevice != incoming.sourceDevice ||
+      current.averageHeartRateBpm != incoming.averageHeartRateBpm ||
+      current.maximumHeartRateBpm != incoming.maximumHeartRateBpm ||
+      current.activeEnergyKilocalories != incoming.activeEnergyKilocalories ||
+      current.heartRateSamples.length != incoming.heartRateSamples.length;
 
   Future<void> updateAndPersist(WorkoutRecord record) async {
     if (!_isRestored) await restore();
