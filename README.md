@@ -52,6 +52,7 @@ Movea 记录跑步、骑行、拉伸、力量训练、睡眠和健康数据，�
 - 平台适配层：隔离 HealthKit、Health Connect、Core Location 和 Android Location
 - Apple Watch：使用 watchOS Workout Session，避免把低功耗传感器能力塞进跨平台 UI
 - 数据层：设备本地持久化作为第一数据源，GitHub 私密仓库作为加密备份，不作为实时数据库
+- 本地数据安全：运动记录校验快照、损坏诊断，以及 AES-256-GCM 加密备份文件的导出与验证
 
 ## 数据与隐私
 

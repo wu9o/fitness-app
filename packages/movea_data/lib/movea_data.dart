@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:movea_domain/movea_domain.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+export 'src/encrypted_backup.dart';
+
 abstract interface class WorkoutPersistence {
   Future<List<WorkoutRecord>> read();
   Future<void> write(List<WorkoutRecord> records);
@@ -476,8 +478,8 @@ class TrainingProfileStore extends ChangeNotifier {
   TrainingProfile get profile => _profile;
   bool get isRestored => _isRestored;
 
-  Future<void> restore() async {
-    if (_isRestored) return;
+  Future<void> restore({bool force = false}) async {
+    if (_isRestored && !force) return;
     _profile = await _persistence.read();
     _isRestored = true;
     notifyListeners();
@@ -540,8 +542,8 @@ class RouteGuidancePreferencesStore extends ChangeNotifier {
   RouteGuidancePreferences get preferences => _preferences;
   bool get isRestored => _isRestored;
 
-  Future<void> restore() async {
-    if (_isRestored) return;
+  Future<void> restore({bool force = false}) async {
+    if (_isRestored && !force) return;
     _preferences = await _persistence.read();
     _isRestored = true;
     notifyListeners();

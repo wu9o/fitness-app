@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -57,7 +59,9 @@ class ActivitySessionSnapshot {
 }
 
 class MoveaShell extends StatefulWidget {
-  const MoveaShell({super.key});
+  const MoveaShell({this.onBackupRestored, super.key});
+
+  final Future<void> Function()? onBackupRestored;
 
   @override
   State<MoveaShell> createState() => _MoveaShellState();
@@ -186,11 +190,12 @@ class _MoveaShellState extends State<MoveaShell> {
   }
 
   Future<void> openSettings() async {
-    await Navigator.of(context).push(
+    final restored = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => SettingsPage(workoutStore: store),
       ),
     );
+    if (restored == true) await widget.onBackupRestored?.call();
   }
 
   @override
@@ -2778,6 +2783,8 @@ class SettingsPage extends StatelessWidget {
                   style: TextStyle(color: Colors.black54)),
               const SizedBox(height: 14),
               _WorkoutIntegrityCard(store: workoutStore!),
+              const SizedBox(height: 14),
+              const _EncryptedBackupCard(),
               const SizedBox(height: 24),
             ],
             const Text('地图服务',
@@ -2820,6 +2827,264 @@ class SettingsPage extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EncryptedBackupCard extends StatefulWidget {
+  const _EncryptedBackupCard();
+
+  @override
+  State<_EncryptedBackupCard> createState() => _EncryptedBackupCardState();
+}
+
+class _EncryptedBackupCardState extends State<_EncryptedBackupCard> {
+  final EncryptedBackupService _service = EncryptedBackupService();
+  bool _busy = false;
+
+  Future<String?> _requestPassphrase({required bool confirm}) async {
+    var passphrase = '';
+    var confirmation = '';
+    String? errorText;
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(confirm ? '设置备份口令' : '输入备份口令'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(confirm
+                  ? '口令不会保存到设备或备份文件。以后验证和恢复都需要它。'
+                  : '口令只用于本次本地解密，不会保存。'),
+              const SizedBox(height: 14),
+              TextField(
+                key: const ValueKey('backup-passphrase-input'),
+                autofocus: true,
+                obscureText: true,
+                onChanged: (value) => passphrase = value,
+                decoration: InputDecoration(
+                  labelText: '备份口令',
+                  errorText: errorText,
+                ),
+              ),
+              if (confirm) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey('backup-passphrase-confirm'),
+                  obscureText: true,
+                  onChanged: (value) => confirmation = value,
+                  decoration: const InputDecoration(labelText: '再次输入'),
+                ),
+              ],
+              const SizedBox(height: 8),
+              const Text('至少 8 个字符；忘记后无法找回。',
+                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (passphrase.trim().length < 8) {
+                  setDialogState(() => errorText = '口令至少需要 8 个字符');
+                  return;
+                }
+                if (confirm && passphrase != confirmation) {
+                  setDialogState(() => errorText = '两次输入的口令不一致');
+                  return;
+                }
+                Navigator.pop(dialogContext, passphrase);
+              },
+              child: Text(confirm ? '生成备份' : '验证'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportBackup() async {
+    final passphrase = await _requestPassphrase(confirm: true);
+    if (passphrase == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final now = DateTime.now();
+      final archive = await _service.createArchive(
+        passphrase: passphrase,
+        createdAt: now,
+      );
+      final date = now.toIso8601String().split('T').first;
+      final output = await FilePicker.saveFile(
+        dialogTitle: '保存 Movea 加密备份',
+        fileName: 'movea-backup-$date.movea',
+        bytes: utf8.encode(archive),
+      );
+      if (!mounted || output == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('加密备份已保存；请妥善保管口令')),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('无法创建备份：$error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _inspectBackup() async {
+    final file = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: const ['movea'],
+      darwinOptions: const DarwinOptions(acceptLabel: '验证'),
+    );
+    if (file == null || !mounted) return;
+    final passphrase = await _requestPassphrase(confirm: false);
+    if (passphrase == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final archive = utf8.decode(await file.readAsBytes());
+      final result = await _service.inspectArchive(
+        archive: archive,
+        passphrase: passphrase,
+      );
+      if (!mounted) return;
+      final shouldRestore = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('备份校验通过'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('创建时间：${_formatDateTime(result.manifest.createdAt)}'),
+              const SizedBox(height: 10),
+              Text('运动记录：${result.manifest.workoutCount} 条'),
+              Text('路线：${result.manifest.routeCount} 条'),
+              Text('训练计划：${result.manifest.trainingPlanCount} 个'),
+              const SizedBox(height: 10),
+              const Text('你可以只完成校验，也可以在二次确认后恢复到本机。',
+                  style: TextStyle(color: Colors.black54)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('只校验'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.restore),
+              label: const Text('恢复到本机'),
+            ),
+          ],
+        ),
+      );
+      if (shouldRestore != true || !mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('确认替换本地数据？'),
+          content: const Text(
+            '将替换本机的运动记录、路线、训练计划和相关设置。HealthKit 数据、正在进行的运动和登录凭证不受影响。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('确认恢复'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await _service.restoreArchive(
+        archive: archive,
+        passphrase: passphrase,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _formatDateTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: moveaLavender,
+                  child: Icon(Icons.lock_outline, color: moveaBlue),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('加密备份包',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                      Text('AES-256-GCM · 口令不保存',
+                          style: TextStyle(color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '导出运动记录、路线、训练计划和训练参数。文件可以保存到“文件”或稍后上传到 GitHub 私密仓库。',
+              style: TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    key: const ValueKey('export-encrypted-backup'),
+                    onPressed: _busy ? null : _exportBackup,
+                    icon: const Icon(Icons.ios_share_outlined),
+                    label: Text(_busy ? '处理中…' : '导出加密备份'),
+                  ),
+                ),
+              ],
+            ),
+            TextButton.icon(
+              key: const ValueKey('inspect-encrypted-backup'),
+              onPressed: _busy ? null : _inspectBackup,
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('验证已有备份'),
             ),
           ],
         ),

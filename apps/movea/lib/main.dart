@@ -21,6 +21,7 @@ class _MoveaAppState extends State<MoveaApp> {
   final TrainingProfileStore trainingProfileStore = TrainingProfileStore();
   final RouteGuidancePreferencesStore routeGuidancePreferencesStore =
       RouteGuidancePreferencesStore();
+  int _dataGeneration = 0;
 
   @override
   void initState() {
@@ -36,6 +37,15 @@ class _MoveaAppState extends State<MoveaApp> {
     super.dispose();
   }
 
+  Future<void> _reloadAfterBackupRestore() async {
+    await Future.wait([
+      trainingProfileStore.restore(force: true),
+      routeGuidancePreferencesStore.restore(force: true),
+    ]);
+    if (!mounted) return;
+    setState(() => _dataGeneration++);
+  }
+
   @override
   Widget build(BuildContext context) {
     return TrainingProfileScope(
@@ -46,7 +56,10 @@ class _MoveaAppState extends State<MoveaApp> {
           title: '动迹 Movea',
           debugShowCheckedModeBanner: false,
           theme: moveaTheme(),
-          home: const MoveaShell(),
+          home: MoveaShell(
+            key: ValueKey(_dataGeneration),
+            onBackupRestored: _reloadAfterBackupRestore,
+          ),
         ),
       ),
     );

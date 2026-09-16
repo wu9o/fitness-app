@@ -102,6 +102,12 @@ GPS 点还会携带速度、海拔和精度，运动记录从原始点派生平�
 SHA-256 校验和；读取到损坏记录时只接受校验通过且能完整解码的快照。修复会经过设置页确认，不会静默
 覆盖唯一数据源。该快照用于本地容灾，不等同于后续加密 GitHub 备份。
 
+跨设备备份使用独立的 `movea.encrypted-backup` 信封格式。客户端以 PBKDF2-HMAC-SHA256
+从用户口令派生 256 位密钥，再用 AES-256-GCM 同时提供加密和篡改校验。备份文件只包含
+密文、随机盐、nonce/MAC 和非敏感格式版本，不保存口令或可直接复用的密钥。设置页会先完成
+解密和清单预检，只有在第二次明确确认后才替换备份范围内的本地数据；写入失败时回滚原值，
+恢复完成后重建应用数据 Store，避免磁盘与界面状态不一致。
+
 Watch 端使用 `HKWorkoutSession` 与 `HKLiveWorkoutBuilder` 采集实时心率、距离和活动能量，结束后先写入
 HealthKit，再通过 `WCSession.transferUserInfo` 排队发送摘要。iPhone 将尚未出现在 HealthKit 查询结果中的
 摘要放入导入列表，并用 HealthKit UUID 去重；HealthKit 完整记录到达后会替代临时摘要。Watch Connectivity

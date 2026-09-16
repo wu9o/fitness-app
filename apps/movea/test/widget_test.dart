@@ -618,6 +618,103 @@ void main() {
     expect(tampered.error, 'checksum mismatch');
   });
 
+  test('Encrypted backup round-trips and rejects the wrong passphrase',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      SharedPreferencesWorkoutPersistence.storageKey: [
+        jsonEncode({
+          'id': 'encrypted-workout',
+          'activity': 'run',
+          'startedAt': DateTime(2026, 9, 17, 7).toIso8601String(),
+          'durationSeconds': 1800,
+          'distanceMeters': 5000,
+          'routePoints': const [],
+          'sourceDevice': 'iPhone',
+        }),
+      ],
+      'movea.routes.v1': jsonEncode([
+        {'id': 'route-one'}
+      ]),
+      'movea.training_plans.v1': jsonEncode([
+        {'id': 'plan-one'},
+        {'id': 'plan-two'},
+      ]),
+      SharedPreferencesTrainingProfilePersistence.storageKey: 190,
+    });
+    final service = EncryptedBackupService();
+    final archive = await service.createArchive(
+      passphrase: 'correct horse battery staple',
+      createdAt: DateTime.utc(2026, 9, 17, 9, 30),
+    );
+
+    expect(archive, isNot(contains('encrypted-workout')));
+    final decrypted = await service.inspectArchive(
+      archive: archive,
+      passphrase: 'correct horse battery staple',
+    );
+    expect(decrypted.manifest.workoutCount, 1);
+    expect(decrypted.manifest.routeCount, 1);
+    expect(decrypted.manifest.trainingPlanCount, 2);
+    expect(decrypted.manifest.includesTrainingProfile, isTrue);
+    expect(
+      decrypted.preferences[SharedPreferencesWorkoutPersistence.storageKey],
+      hasLength(1),
+    );
+
+    await expectLater(
+      service.inspectArchive(
+        archive: archive,
+        passphrase: 'definitely the wrong password',
+      ),
+      throwsA(
+        isA<EncryptedBackupException>().having(
+          (error) => error.message,
+          'message',
+          contains('口令错误'),
+        ),
+      ),
+    );
+
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setStringList(
+      SharedPreferencesWorkoutPersistence.storageKey,
+      ['newer-local-record-that-will-be-replaced'],
+    );
+    await preferences.setInt(
+      SharedPreferencesTrainingProfilePersistence.storageKey,
+      175,
+    );
+    await preferences.setBool(
+      SharedPreferencesRouteGuidancePreferencesPersistence.hapticsKey,
+      true,
+    );
+    final restoredManifest = await service.restoreArchive(
+      archive: archive,
+      passphrase: 'correct horse battery staple',
+    );
+    expect(restoredManifest.workoutCount, 1);
+    expect(
+      preferences
+          .getStringList(
+            SharedPreferencesWorkoutPersistence.storageKey,
+          )!
+          .single,
+      contains('encrypted-workout'),
+    );
+    expect(
+      preferences.getInt(
+        SharedPreferencesTrainingProfilePersistence.storageKey,
+      ),
+      190,
+    );
+    expect(
+      preferences.getBool(
+        SharedPreferencesRouteGuidancePreferencesPersistence.hapticsKey,
+      ),
+      isNull,
+    );
+  });
+
   test('Workout storage detects corruption and repairs from its snapshot',
       () async {
     SharedPreferences.setMockInitialValues({});
