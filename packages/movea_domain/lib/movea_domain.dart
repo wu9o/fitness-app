@@ -96,6 +96,43 @@ class WorkoutRecord {
   }
 }
 
+/// Recoverable snapshot of a workout that has started but has not finished.
+///
+/// This is intentionally separate from [WorkoutRecord]: drafts can be updated
+/// frequently and are only promoted to permanent history after the user ends
+/// the workout.
+class ActiveWorkoutDraft {
+  const ActiveWorkoutDraft({
+    required this.activity,
+    required this.startedAt,
+    required this.updatedAt,
+    required this.pausedDuration,
+    required this.distanceMeters,
+    this.pausedAt,
+    this.routeId,
+    this.routePoints = const [],
+  });
+
+  final ActivityType activity;
+  final DateTime startedAt;
+  final DateTime updatedAt;
+  final DateTime? pausedAt;
+  final Duration pausedDuration;
+  final double distanceMeters;
+  final String? routeId;
+  final List<LocationPoint> routePoints;
+
+  bool get isPaused => pausedAt != null;
+
+  /// Elapsed active time represented by the saved snapshot. When an app is
+  /// relaunched, time after [updatedAt] is not counted automatically.
+  Duration get savedElapsed {
+    final activeEnd = pausedAt ?? updatedAt;
+    final value = activeEnd.difference(startedAt) - pausedDuration;
+    return value.isNegative ? Duration.zero : value;
+  }
+}
+
 /// A location sample captured during an outdoor workout.
 ///
 /// Route plans also reuse this value object, with [timestamp] and [accuracy]

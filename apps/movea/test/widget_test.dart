@@ -388,6 +388,40 @@ void main() {
     expect(restored.records.single.plannedActions, 6);
   });
 
+  test('ActiveWorkoutStore restores an unfinished GPS workout', () async {
+    SharedPreferences.setMockInitialValues({});
+    final persistence = SharedPreferencesActiveWorkoutPersistence();
+    final original = ActiveWorkoutStore(persistence: persistence);
+    final startedAt = DateTime(2026, 9, 16, 7, 30);
+    final updatedAt = startedAt.add(const Duration(minutes: 18));
+
+    await original.save(ActiveWorkoutDraft(
+      activity: ActivityType.run,
+      startedAt: startedAt,
+      updatedAt: updatedAt,
+      pausedDuration: const Duration(minutes: 2),
+      distanceMeters: 2650,
+      routeId: 'park-loop',
+      routePoints: const [
+        LocationPoint(latitude: 31.2304, longitude: 121.4737),
+        LocationPoint(latitude: 31.2322, longitude: 121.4780),
+      ],
+    ));
+
+    final restored = ActiveWorkoutStore(persistence: persistence);
+    await restored.restore();
+    expect(restored.draft, isNotNull);
+    expect(restored.draft!.activity, ActivityType.run);
+    expect(restored.draft!.routeId, 'park-loop');
+    expect(restored.draft!.routePoints, hasLength(2));
+    expect(restored.draft!.savedElapsed, const Duration(minutes: 16));
+
+    await restored.clear();
+    final cleared = ActiveWorkoutStore(persistence: persistence);
+    await cleared.restore();
+    expect(cleared.draft, isNull);
+  });
+
   test('TrainingPlanStore persists and restores custom plans', () async {
     SharedPreferences.setMockInitialValues({});
     final persistence = SharedPreferencesTrainingPlanPersistence();

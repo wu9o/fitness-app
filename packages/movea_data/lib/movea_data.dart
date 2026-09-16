@@ -138,6 +138,109 @@ class WorkoutStore extends ChangeNotifier {
   }
 }
 
+abstract interface class ActiveWorkoutPersistence {
+  Future<ActiveWorkoutDraft?> read();
+  Future<void> write(ActiveWorkoutDraft draft);
+  Future<void> clear();
+}
+
+class SharedPreferencesActiveWorkoutPersistence
+    implements ActiveWorkoutPersistence {
+  static const storageKey = 'movea.activeWorkout.v1';
+
+  @override
+  Future<ActiveWorkoutDraft?> read() async {
+    final preferences = await SharedPreferences.getInstance();
+    final payload = preferences.getString(storageKey);
+    if (payload == null) return null;
+    try {
+      final json = jsonDecode(payload) as Map<String, dynamic>;
+      final activityName = json['activity'] as String? ?? 'run';
+      final activity = ActivityType.values.firstWhere(
+        (type) => type.name == activityName,
+        orElse: () => ActivityType.run,
+      );
+      return ActiveWorkoutDraft(
+        activity: activity,
+        startedAt: DateTime.parse(json['startedAt'] as String),
+        updatedAt: DateTime.parse(json['updatedAt'] as String),
+        pausedAt: DateTime.tryParse(json['pausedAt'] as String? ?? ''),
+        pausedDuration: Duration(
+          seconds: (json['pausedDurationSeconds'] as num?)?.toInt() ?? 0,
+        ),
+        distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0,
+        routeId: json['routeId'] as String?,
+        routePoints: (json['routePoints'] as List<dynamic>? ?? const [])
+            .map(SharedPreferencesWorkoutPersistence._decodePoint)
+            .whereType<LocationPoint>()
+            .toList(growable: false),
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> write(ActiveWorkoutDraft draft) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(
+      storageKey,
+      jsonEncode({
+        'activity': draft.activity.name,
+        'startedAt': draft.startedAt.toIso8601String(),
+        'updatedAt': draft.updatedAt.toIso8601String(),
+        if (draft.pausedAt != null)
+          'pausedAt': draft.pausedAt!.toIso8601String(),
+        'pausedDurationSeconds': draft.pausedDuration.inSeconds,
+        'distanceMeters': draft.distanceMeters,
+        if (draft.routeId != null) 'routeId': draft.routeId,
+        'routePoints': draft.routePoints
+            .map(SharedPreferencesWorkoutPersistence._encodePoint)
+            .toList(growable: false),
+      }),
+    );
+  }
+
+  @override
+  Future<void> clear() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(storageKey);
+  }
+}
+
+class ActiveWorkoutStore extends ChangeNotifier {
+  ActiveWorkoutStore({ActiveWorkoutPersistence? persistence})
+    : _persistence = persistence ?? SharedPreferencesActiveWorkoutPersistence();
+
+  final ActiveWorkoutPersistence _persistence;
+  ActiveWorkoutDraft? _draft;
+  bool _isRestored = false;
+
+  ActiveWorkoutDraft? get draft => _draft;
+  bool get isRestored => _isRestored;
+
+  Future<void> restore() async {
+    if (_isRestored) return;
+    _draft = await _persistence.read();
+    _isRestored = true;
+    notifyListeners();
+  }
+
+  Future<void> save(ActiveWorkoutDraft draft) async {
+    _draft = draft;
+    _isRestored = true;
+    notifyListeners();
+    await _persistence.write(draft);
+  }
+
+  Future<void> clear() async {
+    _draft = null;
+    _isRestored = true;
+    notifyListeners();
+    await _persistence.clear();
+  }
+}
+
 abstract interface class RoutePersistence {
   Future<List<RouteSummary>> read();
   Future<void> write(List<RouteSummary> routes);

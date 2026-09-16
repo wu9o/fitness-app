@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geolocator_apple/geolocator_apple.dart' as geo_apple;
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_domain/movea_domain.dart';
 
@@ -120,10 +122,22 @@ class GeolocatorLocationRepository implements LocationRepository {
   @override
   Stream<LocationPoint> get points => _points.stream;
 
-  LocationSettings get _settings => const LocationSettings(
+  LocationSettings get _settings {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return geo_apple.AppleSettings(
         accuracy: LocationAccuracy.bestForNavigation,
+        activityType: geo_apple.ActivityType.fitness,
         distanceFilter: 5,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+        allowBackgroundLocationUpdates: true,
       );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 5,
+    );
+  }
 
   @override
   Future<void> start() async {

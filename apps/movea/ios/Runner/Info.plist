@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>用于在运动时记录 GPS 路线、距离和路线引导。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>运动开始后即使锁屏或切换应用，也需要持续记录 GPS 路线和距离。</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>用于读取睡眠、体重、步数和静息心率，帮助你回顾运动恢复状态。</string>
 	<key>NSHealthUpdateUsageDescription</key>
@@ -55,6 +57,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

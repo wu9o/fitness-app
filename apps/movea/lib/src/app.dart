@@ -43,6 +43,7 @@ class _MoveaShellState extends State<MoveaShell> {
   final TrainingPlanStore planStore = TrainingPlanStore();
   final ExerciseCatalogStore exerciseStore = ExerciseCatalogStore();
   final RouteStore routeStore = RouteStore();
+  final ActiveWorkoutStore activeWorkoutStore = ActiveWorkoutStore();
   late final HealthStore healthStore;
   int selectedIndex = 0;
   RouteSummary? selectedRoute;
@@ -67,6 +68,36 @@ class _MoveaShellState extends State<MoveaShell> {
           : PlatformHealthRepository(),
     );
     unawaited(healthStore.restore());
+    unawaited(_restoreActiveWorkout());
+  }
+
+  Future<void> _restoreActiveWorkout() async {
+    await Future.wait([
+      activeWorkoutStore.restore(),
+      routeStore.restore(),
+    ]);
+    final draft = activeWorkoutStore.draft;
+    if (!mounted || draft == null) return;
+    RouteSummary? route;
+    if (draft.routeId != null) {
+      for (final item in routeStore.routes) {
+        if (item.id == draft.routeId) {
+          route = item;
+          break;
+        }
+      }
+    }
+    setState(() {
+      selectedActivity = draft.activity;
+      selectedRoute = route;
+      activeSession = ActivitySessionSnapshot(
+        activity: draft.activity,
+        elapsed: draft.savedElapsed,
+        distanceMeters: draft.distanceMeters,
+        paused: true,
+      );
+      activityFullscreen = false;
+    });
   }
 
   void openActivity() {
@@ -163,6 +194,7 @@ class _MoveaShellState extends State<MoveaShell> {
       routeStore: routeStore,
       planStore: planStore,
       exerciseStore: exerciseStore,
+      activeWorkoutStore: activeWorkoutStore,
       locationRepository: locationRepository,
       onSelectActivity: chooseActivity,
       onMinimize: minimizeActivity,
@@ -282,6 +314,7 @@ class _ActivityOverlay extends StatelessWidget {
     required this.routeStore,
     required this.planStore,
     required this.exerciseStore,
+    required this.activeWorkoutStore,
     required this.locationRepository,
     required this.onSelectActivity,
     required this.onMinimize,
@@ -297,6 +330,7 @@ class _ActivityOverlay extends StatelessWidget {
   final RouteStore routeStore;
   final TrainingPlanStore planStore;
   final ExerciseCatalogStore exerciseStore;
+  final ActiveWorkoutStore activeWorkoutStore;
   final LocationRepository locationRepository;
   final ValueChanged<ActivityType> onSelectActivity;
   final VoidCallback onMinimize;
@@ -319,6 +353,7 @@ class _ActivityOverlay extends StatelessWidget {
       routeStore: routeStore,
       planStore: planStore,
       exerciseStore: exerciseStore,
+      activeWorkoutStore: activeWorkoutStore,
       locationRepository: locationRepository,
       selectedRoute: selectedRoute,
       initialActivity: activity,
@@ -2150,6 +2185,7 @@ class ActivityPage extends StatefulWidget {
     required this.routeStore,
     required this.planStore,
     required this.exerciseStore,
+    required this.activeWorkoutStore,
     required this.locationRepository,
     required this.selectedRoute,
     required this.initialActivity,
@@ -2167,6 +2203,7 @@ class ActivityPage extends StatefulWidget {
   final RouteStore routeStore;
   final TrainingPlanStore planStore;
   final ExerciseCatalogStore exerciseStore;
+  final ActiveWorkoutStore activeWorkoutStore;
   final LocationRepository locationRepository;
   final RouteSummary? selectedRoute;
   final ActivityType initialActivity;
@@ -2192,6 +2229,7 @@ class _ActivityPageState extends State<ActivityPage> {
   bool paused = false;
   bool panelExpanded = true;
   bool locationStarting = false;
+  bool recoveredSession = false;
   String? locationError;
   double distanceMeters = 0;
   final List<LocationPoint> livePoints = [];
@@ -2201,6 +2239,20 @@ class _ActivityPageState extends State<ActivityPage> {
   void initState() {
     super.initState();
     activity = widget.initialActivity;
+    final draft = widget.activeWorkoutStore.draft;
+    if (draft != null && draft.activity == activity) {
+      startedAt = draft.startedAt;
+      pausedAt = draft.pausedAt ?? draft.updatedAt;
+      pausedDuration = draft.pausedDuration;
+      elapsed = draft.savedElapsed;
+      paused = true;
+      panelExpanded = true;
+      recoveredSession = true;
+      distanceMeters = draft.distanceMeters;
+      livePoints.addAll(draft.routePoints);
+      _startTicker();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _emitSessionState());
+    }
   }
 
   bool get recording => startedAt != null;
@@ -2228,12 +2280,14 @@ class _ActivityPageState extends State<ActivityPage> {
       pausedDuration = Duration.zero;
       elapsed = Duration.zero;
       paused = false;
+      recoveredSession = false;
       panelExpanded = false;
       locationStarting = activity.usesLocation;
       distanceMeters = 0;
       livePoints.clear();
     });
     _emitSessionState();
+    unawaited(_persistDraft());
 
     if (activity.usesLocation) {
       locationSubscription ??=
@@ -2248,6 +2302,7 @@ class _ActivityPageState extends State<ActivityPage> {
           locationStarting = false;
           locationError = _locationErrorMessage(error);
         });
+        unawaited(widget.activeWorkoutStore.clear());
         _emitSessionState();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(locationError!)),
@@ -2259,11 +2314,31 @@ class _ActivityPageState extends State<ActivityPage> {
       _emitSessionState();
     }
 
+    _startTicker();
+  }
+
+  void _startTicker() {
+    timer?.cancel();
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || startedAt == null || paused) return;
       setState(() => elapsed = activeElapsed());
       _emitSessionState();
     });
+  }
+
+  Future<void> _persistDraft() async {
+    final startTime = startedAt;
+    if (startTime == null) return;
+    await widget.activeWorkoutStore.save(ActiveWorkoutDraft(
+      activity: activity,
+      startedAt: startTime,
+      updatedAt: DateTime.now(),
+      pausedAt: pausedAt,
+      pausedDuration: pausedDuration,
+      distanceMeters: distanceMeters,
+      routeId: widget.selectedRoute?.id,
+      routePoints: List.unmodifiable(livePoints),
+    ));
   }
 
   String _locationErrorMessage(Object error) {
@@ -2311,6 +2386,7 @@ class _ActivityPageState extends State<ActivityPage> {
       if (step >= 2) distanceMeters += step;
     });
     _emitSessionState();
+    unawaited(_persistDraft());
   }
 
   Duration activeElapsed() {
@@ -2329,6 +2405,7 @@ class _ActivityPageState extends State<ActivityPage> {
         if (pausedAt != null) pausedDuration += now.difference(pausedAt!);
         pausedAt = null;
         paused = false;
+        recoveredSession = false;
         elapsed = activeElapsed();
       } else {
         pausedAt = now;
@@ -2336,7 +2413,10 @@ class _ActivityPageState extends State<ActivityPage> {
       }
     });
     _emitSessionState();
-    if (!activity.usesLocation) return;
+    if (!activity.usesLocation) {
+      await _persistDraft();
+      return;
+    }
     if (shouldResume) {
       try {
         await widget.locationRepository.start();
@@ -2352,6 +2432,7 @@ class _ActivityPageState extends State<ActivityPage> {
     } else {
       await widget.locationRepository.stop();
     }
+    await _persistDraft();
   }
 
   void finish() {
@@ -2368,6 +2449,7 @@ class _ActivityPageState extends State<ActivityPage> {
         distanceMeters: distanceMeters,
         routePoints: List.unmodifiable(livePoints));
     widget.store.add(record);
+    unawaited(widget.activeWorkoutStore.clear());
     unawaited(_cancelLocationSubscription());
     timer?.cancel();
     setState(() {
@@ -2376,6 +2458,7 @@ class _ActivityPageState extends State<ActivityPage> {
       pausedDuration = Duration.zero;
       elapsed = Duration.zero;
       paused = false;
+      recoveredSession = false;
       panelExpanded = false;
       locationStarting = false;
       distanceMeters = 0;
@@ -2405,6 +2488,10 @@ class _ActivityPageState extends State<ActivityPage> {
       label = locationError!;
       icon = Icons.location_disabled_outlined;
       color = Colors.redAccent;
+    } else if (recoveredSession && paused) {
+      label = '已恢复上次运动 · 点击继续恢复 GPS 记录';
+      icon = Icons.restore;
+      color = moveaBlue;
     } else if (locationStarting || livePoints.isEmpty) {
       label = locationStarting ? '正在获取 GPS 定位…' : '等待 GPS 定位…';
       icon = Icons.gps_fixed;
@@ -2639,6 +2726,10 @@ class _ActivityPageState extends State<ActivityPage> {
                         ],
                         const SizedBox(height: 18),
                         if (recording) ...[
+                          if (recoveredSession) ...[
+                            const _RecoveredWorkoutCard(),
+                            const SizedBox(height: 14),
+                          ],
                           if (activity.usesLocation)
                             Text(
                                 '${(distanceMeters / 1000).toStringAsFixed(2)} km',
@@ -2727,6 +2818,24 @@ class _ActivityPageState extends State<ActivityPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _RecoveredWorkoutCard extends StatelessWidget {
+  const _RecoveredWorkoutCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      margin: EdgeInsets.zero,
+      color: Color(0xFFF1F5FF),
+      child: ListTile(
+        dense: true,
+        leading: Icon(Icons.restore, color: moveaBlue),
+        title: Text('已恢复未完成运动', style: TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text('恢复后默认暂停，点击“继续”才会重新记录时间和 GPS。'),
+      ),
     );
   }
 }
