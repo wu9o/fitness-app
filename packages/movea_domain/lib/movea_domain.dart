@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 enum ActivityType { run, ride, stretch, strength }
 
 extension ActivityTypeLabel on ActivityType {
@@ -154,7 +156,176 @@ class LocationPoint {
   final double? accuracy;
   final double? speedMetersPerSecond;
   final double? altitudeMeters;
+
+  bool get hasUsableCoordinate =>
+      latitude.isFinite &&
+      longitude.isFinite &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180 &&
+      !(latitude.abs() < .0001 && longitude.abs() < .0001);
 }
+
+enum RouteManeuver { straight, left, right, arrive }
+
+/// Navigation-friendly progress derived from a position and a planned route.
+///
+/// The calculation stays in the shared domain layer so iPhone, Android and
+/// Watch clients can present the same progress and turn hint without depending
+/// on a particular map SDK or navigation service.
+class RouteGuidance {
+  const RouteGuidance({
+    required this.distanceToRouteMeters,
+    required this.progress,
+    required this.remainingMeters,
+    required this.distanceToManeuverMeters,
+    required this.maneuver,
+    required this.segmentIndex,
+  });
+
+  final double distanceToRouteMeters;
+  final double progress;
+  final double remainingMeters;
+  final double distanceToManeuverMeters;
+  final RouteManeuver maneuver;
+  final int segmentIndex;
+
+  bool get isOffRoute => distanceToRouteMeters > 80;
+}
+
+/// Projects [current] onto the closest route segment, then finds the next
+/// meaningful turn. Small bends are treated as a continuous road so sparse GPS
+/// points do not produce noisy left/right instructions.
+RouteGuidance calculateRouteGuidance(
+  LocationPoint current,
+  List<LocationPoint> route,
+) {
+  if (route.length < 2) {
+    return const RouteGuidance(
+      distanceToRouteMeters: double.infinity,
+      progress: 0,
+      remainingMeters: 0,
+      distanceToManeuverMeters: 0,
+      maneuver: RouteManeuver.arrive,
+      segmentIndex: 0,
+    );
+  }
+
+  const latitudeScale = 111320.0;
+  final longitudeScale =
+      111320.0 * math.cos(_routeRadians(current.latitude)).abs();
+  double xFor(LocationPoint point) =>
+      (point.longitude - current.longitude) * longitudeScale;
+  double yFor(LocationPoint point) =>
+      (point.latitude - current.latitude) * latitudeScale;
+
+  final segmentLengths = <double>[];
+  var totalLength = 0.0;
+  var distanceAlong = 0.0;
+  var closestDistance = double.infinity;
+  var closestSegment = 0;
+  var closestProjection = 0.0;
+
+  for (var index = 0; index < route.length - 1; index++) {
+    final start = route[index];
+    final end = route[index + 1];
+    final ax = xFor(start);
+    final ay = yFor(start);
+    final bx = xFor(end);
+    final by = yFor(end);
+    final dx = bx - ax;
+    final dy = by - ay;
+    final segmentSquared = dx * dx + dy * dy;
+    final segmentLength = _routeDistance(start, end);
+    segmentLengths.add(segmentLength);
+    final projection = segmentSquared == 0
+        ? 0.0
+        : ((-ax * dx) + (-ay * dy)) / segmentSquared;
+    final t = projection.clamp(0.0, 1.0).toDouble();
+    final projectedX = ax + dx * t;
+    final projectedY = ay + dy * t;
+    final distance = math.sqrt(
+      projectedX * projectedX + projectedY * projectedY,
+    );
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestSegment = index;
+      closestProjection = t;
+      distanceAlong = totalLength + segmentLength * t;
+    }
+    totalLength += segmentLength;
+  }
+
+  final remaining = math.max(0.0, totalLength - distanceAlong);
+  final progress = totalLength == 0 ? 0.0 : distanceAlong / totalLength;
+  if (remaining <= 25) {
+    return RouteGuidance(
+      distanceToRouteMeters: closestDistance,
+      progress: progress.clamp(0.0, 1.0),
+      remainingMeters: remaining,
+      distanceToManeuverMeters: remaining,
+      maneuver: RouteManeuver.arrive,
+      segmentIndex: closestSegment,
+    );
+  }
+
+  var distanceToTurn = segmentLengths[closestSegment] * (1 - closestProjection);
+  var maneuver = RouteManeuver.straight;
+  var maneuverDistance = remaining;
+  for (var vertex = closestSegment + 1; vertex < route.length - 1; vertex++) {
+    final incoming = _routeBearing(route[vertex - 1], route[vertex]);
+    final outgoing = _routeBearing(route[vertex], route[vertex + 1]);
+    final delta = _normalizeBearing(outgoing - incoming);
+    if (delta.abs() >= 30) {
+      maneuver = delta < 0 ? RouteManeuver.left : RouteManeuver.right;
+      maneuverDistance = distanceToTurn;
+      break;
+    }
+    distanceToTurn += segmentLengths[vertex];
+  }
+
+  return RouteGuidance(
+    distanceToRouteMeters: closestDistance,
+    progress: progress.clamp(0.0, 1.0),
+    remainingMeters: remaining,
+    distanceToManeuverMeters: maneuverDistance,
+    maneuver: maneuver,
+    segmentIndex: closestSegment,
+  );
+}
+
+double _routeDistance(LocationPoint from, LocationPoint to) {
+  const earthRadiusMeters = 6371000.0;
+  final latitudeDelta = _routeRadians(to.latitude - from.latitude);
+  final longitudeDelta = _routeRadians(to.longitude - from.longitude);
+  final fromLatitude = _routeRadians(from.latitude);
+  final toLatitude = _routeRadians(to.latitude);
+  final haversine =
+      math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+      math.cos(fromLatitude) *
+          math.cos(toLatitude) *
+          math.sin(longitudeDelta / 2) *
+          math.sin(longitudeDelta / 2);
+  return earthRadiusMeters *
+      2 *
+      math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+}
+
+double _routeBearing(LocationPoint from, LocationPoint to) {
+  final fromLatitude = _routeRadians(from.latitude);
+  final toLatitude = _routeRadians(to.latitude);
+  final longitudeDelta = _routeRadians(to.longitude - from.longitude);
+  final y = math.sin(longitudeDelta) * math.cos(toLatitude);
+  final x =
+      math.cos(fromLatitude) * math.sin(toLatitude) -
+      math.sin(fromLatitude) * math.cos(toLatitude) * math.cos(longitudeDelta);
+  return math.atan2(y, x) * 180 / math.pi;
+}
+
+double _normalizeBearing(double value) => (value + 540) % 360 - 180;
+
+double _routeRadians(double degrees) => degrees * math.pi / 180;
 
 class RouteSummary {
   const RouteSummary({

@@ -169,7 +169,7 @@ class GeolocatorLocationRepository implements LocationRepository {
   void _emit(Position position) {
     // Low-quality samples can create visibly false jumps in a running track.
     if (position.accuracy.isFinite && position.accuracy > 80) return;
-    _points.add(LocationPoint(
+    final point = LocationPoint(
       latitude: position.latitude,
       longitude: position.longitude,
       timestamp: position.timestamp,
@@ -178,7 +178,13 @@ class GeolocatorLocationRepository implements LocationRepository {
           ? position.speed
           : null,
       altitudeMeters: position.altitude.isFinite ? position.altitude : null,
-    ));
+    );
+    // iOS Simulator and a cold GPS can briefly report Null Island before a
+    // usable fix arrives. Letting that sample into a track would make every
+    // following real point look like an impossible multi-thousand-kilometre
+    // jump and permanently poison route guidance.
+    if (!point.hasUsableCoordinate) return;
+    _points.add(point);
   }
 
   @override

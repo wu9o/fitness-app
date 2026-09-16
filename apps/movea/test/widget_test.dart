@@ -525,6 +525,64 @@ void main() {
     expect(record.averageAccuracyMeters, 10);
   });
 
+  test('Route guidance projects progress and finds the next right turn', () {
+    const route = [
+      LocationPoint(latitude: 0, longitude: 0),
+      LocationPoint(latitude: 0.001, longitude: 0),
+      LocationPoint(latitude: 0.001, longitude: 0.001),
+    ];
+
+    final guidance = calculateRouteGuidance(
+      const LocationPoint(latitude: 0.0005, longitude: 0),
+      route,
+    );
+
+    expect(guidance.isOffRoute, isFalse);
+    expect(guidance.maneuver, RouteManeuver.right);
+    expect(guidance.distanceToManeuverMeters, closeTo(55.6, 2));
+    expect(guidance.progress, closeTo(.25, .02));
+    expect(guidance.remainingMeters, closeTo(166.8, 4));
+  });
+
+  test('Route guidance distinguishes off-route and arrival states', () {
+    const route = [
+      LocationPoint(latitude: 0, longitude: 0),
+      LocationPoint(latitude: 0.001, longitude: 0),
+      LocationPoint(latitude: 0.001, longitude: 0.001),
+    ];
+
+    final offRoute = calculateRouteGuidance(
+      const LocationPoint(latitude: 0.0005, longitude: 0.002),
+      route,
+    );
+    final arriving = calculateRouteGuidance(
+      const LocationPoint(latitude: 0.001, longitude: 0.0009),
+      route,
+    );
+
+    expect(offRoute.isOffRoute, isTrue);
+    expect(offRoute.distanceToRouteMeters, greaterThan(80));
+    expect(arriving.isOffRoute, isFalse);
+    expect(arriving.maneuver, RouteManeuver.arrive);
+    expect(arriving.remainingMeters, lessThan(25));
+  });
+
+  test('Location samples reject invalid coordinates and Null Island', () {
+    expect(
+      const LocationPoint(latitude: 31.2304, longitude: 121.4737)
+          .hasUsableCoordinate,
+      isTrue,
+    );
+    expect(
+      const LocationPoint(latitude: 0, longitude: 0).hasUsableCoordinate,
+      isFalse,
+    );
+    expect(
+      const LocationPoint(latitude: 95, longitude: 121).hasUsableCoordinate,
+      isFalse,
+    );
+  });
+
   testWidgets('Workout detail shows kilometre split pace', (tester) async {
     final record = WorkoutRecord(
       id: 'split-test',

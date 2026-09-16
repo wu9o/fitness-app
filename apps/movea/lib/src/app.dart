@@ -2233,6 +2233,14 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant ActivityPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!recording && oldWidget.selectedRoute?.id != widget.selectedRoute?.id) {
+      panelExpanded = true;
+    }
+  }
+
   bool get recording => startedAt != null;
 
   void _emitSessionState() {
@@ -2351,6 +2359,10 @@ class _ActivityPageState extends State<ActivityPage> {
     if (!mounted || startedAt == null || paused || !activity.usesLocation) {
       return;
     }
+    if (!point.hasUsableCoordinate) return;
+    while (livePoints.isNotEmpty && !livePoints.last.hasUsableCoordinate) {
+      livePoints.removeLast();
+    }
     final previous = livePoints.isEmpty ? null : livePoints.last;
     var step = 0.0;
     if (previous != null) {
@@ -2437,7 +2449,7 @@ class _ActivityPageState extends State<ActivityPage> {
       elapsed = Duration.zero;
       paused = false;
       recoveredSession = false;
-      panelExpanded = false;
+      panelExpanded = true;
       locationStarting = false;
       distanceMeters = 0;
       livePoints.clear();
@@ -2509,12 +2521,15 @@ class _ActivityPageState extends State<ActivityPage> {
   String _routeGuidance(RouteSummary route, LocationPoint current) {
     final points = route.points;
     if (points.length < 2) return '已载入路线 · 等待更多路线点';
-    final progress = _routeProgress(current, points);
-    if (progress.distanceMeters > 80) {
-      return '偏离计划路线 · ${_formatMeters(progress.distanceMeters)}';
+    final guidance = calculateRouteGuidance(current, points);
+    if (guidance.isOffRoute) {
+      return guidance.distanceToRouteMeters > 50000
+          ? '偏离计划路线 · 距离过远'
+          : '偏离计划路线 · ${_formatMeters(guidance.distanceToRouteMeters)}';
     }
-    return '沿计划路线 · 约 ${(progress.progress * 100).round()}% · '
-        '${_formatMeters(progress.distanceMeters)}';
+    return '${_routeInstruction(guidance)} · '
+        '剩余 ${_formatMeters(guidance.remainingMeters)} · '
+        '${(guidance.progress * 100).round()}%';
   }
 
   @override
@@ -2527,34 +2542,37 @@ class _ActivityPageState extends State<ActivityPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Text(recording ? '正在记录' : activity.label,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w800)),
-              const Spacer(),
-              if (!recording)
+    return ColoredBox(
+      color: moveaPaper,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Text(recording ? '正在记录' : activity.label,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                if (!recording)
+                  IconButton(
+                    onPressed: widget.onChangeActivity,
+                    tooltip: '更换运动',
+                    icon: const Icon(Icons.swap_horiz),
+                  ),
                 IconButton(
-                  onPressed: widget.onChangeActivity,
-                  tooltip: '更换运动',
-                  icon: const Icon(Icons.swap_horiz),
+                  onPressed: widget.onMinimize,
+                  tooltip: recording ? '缩小运动' : '退出全屏',
+                  icon: const Icon(Icons.fullscreen_exit),
                 ),
-              IconButton(
-                onPressed: widget.onMinimize,
-                tooltip: recording ? '缩小运动' : '退出全屏',
-                icon: const Icon(Icons.fullscreen_exit),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: _buildOutdoor(),
-        ),
-      ],
+          Expanded(
+            child: _buildOutdoor(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2564,12 +2582,22 @@ class _ActivityPageState extends State<ActivityPage> {
         : widget.selectedRoute == null
             ? const <LatLng>[]
             : _demoRoute;
+    final guidance = widget.selectedRoute != null &&
+            widget.selectedRoute!.points.length > 1 &&
+            livePoints.isNotEmpty
+        ? calculateRouteGuidance(
+            livePoints.last,
+            widget.selectedRoute!.points,
+          )
+        : null;
     return Stack(
       alignment: Alignment.bottomCenter,
       children: [
         if (activity.usesLocation && widget.showMap)
           _MapPreview(
-              plannedPoints: plannedPoints, livePoints: _toLatLngs(livePoints))
+              plannedPoints: plannedPoints,
+              livePoints: _toLatLngs(livePoints),
+              guidance: guidance)
         else
           const ColoredBox(color: moveaPaper),
         Padding(
@@ -4108,68 +4136,39 @@ double _distanceBetween(LocationPoint from, LocationPoint to) {
       math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
 }
 
-class _RouteProgress {
-  const _RouteProgress({required this.distanceMeters, required this.progress});
-
-  final double distanceMeters;
-  final double progress;
-}
-
-/// Returns the closest distance to the route polyline and the along-route
-/// progress. Projecting onto a segment avoids the visible jumps that happen
-/// when progress is calculated from the nearest stored vertex only.
-_RouteProgress _routeProgress(
-    LocationPoint current, List<LocationPoint> route) {
-  if (route.length < 2) {
-    return const _RouteProgress(distanceMeters: double.infinity, progress: 0);
-  }
-
-  const latitudeScale = 111320.0;
-  final longitudeScale = 111320.0 * math.cos(_radians(current.latitude)).abs();
-  double xFor(LocationPoint point) =>
-      (point.longitude - current.longitude) * longitudeScale;
-  double yFor(LocationPoint point) =>
-      (point.latitude - current.latitude) * latitudeScale;
-
-  var totalLength = 0.0;
-  var distanceAlong = 0.0;
-  var closestDistance = double.infinity;
-  for (var index = 0; index < route.length - 1; index++) {
-    final start = route[index];
-    final end = route[index + 1];
-    final ax = xFor(start);
-    final ay = yFor(start);
-    final bx = xFor(end);
-    final by = yFor(end);
-    final dx = bx - ax;
-    final dy = by - ay;
-    final segmentSquared = dx * dx + dy * dy;
-    final segmentLength = _distanceBetween(start, end);
-    final projection =
-        segmentSquared == 0 ? 0.0 : ((-ax * dx) + (-ay * dy)) / segmentSquared;
-    final t = projection.clamp(0.0, 1.0).toDouble();
-    final projectedX = ax + dx * t;
-    final projectedY = ay + dy * t;
-    final distance =
-        math.sqrt(projectedX * projectedX + projectedY * projectedY);
-    if (distance < closestDistance) {
-      closestDistance = distance;
-      distanceAlong = totalLength + segmentLength * t;
-    }
-    totalLength += segmentLength;
-  }
-  final progress = totalLength == 0 ? 0.0 : distanceAlong / totalLength;
-  return _RouteProgress(
-    distanceMeters: closestDistance,
-    progress: progress.clamp(0.0, 1.0),
-  );
-}
-
 double _radians(double degrees) => degrees * math.pi / 180;
 
 String _formatMeters(double meters) => meters < 1000
     ? '${meters.round()} m'
     : '${(meters / 1000).toStringAsFixed(1)} km';
+
+String _routeInstruction(RouteGuidance guidance) {
+  if (guidance.isOffRoute) return '请返回计划路线';
+  switch (guidance.maneuver) {
+    case RouteManeuver.left:
+      return '前方 ${_formatMeters(guidance.distanceToManeuverMeters)} 左转';
+    case RouteManeuver.right:
+      return '前方 ${_formatMeters(guidance.distanceToManeuverMeters)} 右转';
+    case RouteManeuver.arrive:
+      return '即将到达终点';
+    case RouteManeuver.straight:
+      return '继续直行';
+  }
+}
+
+IconData _routeInstructionIcon(RouteGuidance guidance) {
+  if (guidance.isOffRoute) return Icons.wrong_location_outlined;
+  switch (guidance.maneuver) {
+    case RouteManeuver.left:
+      return Icons.turn_left;
+    case RouteManeuver.right:
+      return Icons.turn_right;
+    case RouteManeuver.arrive:
+      return Icons.flag_outlined;
+    case RouteManeuver.straight:
+      return Icons.straight;
+  }
+}
 
 const _demoRoute = <LatLng>[
   LatLng(31.2304, 121.4737),
@@ -4184,10 +4183,12 @@ class _MapPreview extends StatefulWidget {
   const _MapPreview({
     required this.plannedPoints,
     required this.livePoints,
+    required this.guidance,
   });
 
   final List<LatLng> plannedPoints;
   final List<LatLng> livePoints;
+  final RouteGuidance? guidance;
 
   @override
   State<_MapPreview> createState() => _MapPreviewState();
@@ -4229,6 +4230,7 @@ class _MapPreviewState extends State<_MapPreview> {
           style: snapshot.data!,
           plannedPoints: widget.plannedPoints,
           livePoints: widget.livePoints,
+          guidance: widget.guidance,
         );
       },
     );
@@ -4252,11 +4254,13 @@ class _MapCanvas extends StatefulWidget {
     required this.style,
     required this.plannedPoints,
     required this.livePoints,
+    required this.guidance,
   });
 
   final String style;
   final List<LatLng> plannedPoints;
   final List<LatLng> livePoints;
+  final RouteGuidance? guidance;
 
   @override
   State<_MapCanvas> createState() => _MapCanvasState();
@@ -4383,33 +4387,13 @@ class _MapCanvasState extends State<_MapCanvas> {
         ],
         children: [
           if (markers.isNotEmpty) ml.WidgetLayer(markers: markers),
-          Positioned(
-            left: 12,
-            top: 12,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .92),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x22000000),
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.touch_app, size: 16, color: moveaBlue),
-                  SizedBox(width: 6),
-                  Text('MapLibre · OpenFreeMap',
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                ]),
-              ),
+          if (widget.guidance != null)
+            Positioned(
+              left: 12,
+              right: 68,
+              top: 12,
+              child: _MapGuidanceBanner(guidance: widget.guidance!),
             ),
-          ),
           Positioned(
             right: 12,
             top: 12,
@@ -4433,14 +4417,17 @@ class _MapCanvasState extends State<_MapCanvas> {
                   color: Colors.white.withValues(alpha: .92),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _MapLegendItem(color: moveaBlue, label: '计划路线'),
-                      SizedBox(width: 10),
-                      _MapLegendItem(color: moveaCoral, label: '实际轨迹'),
+                      if (hasPlan)
+                        const _MapLegendItem(color: moveaBlue, label: '计划路线'),
+                      if (hasPlan && hasLive) const SizedBox(width: 10),
+                      if (hasLive)
+                        const _MapLegendItem(color: moveaCoral, label: '实际轨迹'),
                     ],
                   ),
                 ),
@@ -4471,6 +4458,69 @@ class _MapMarker extends StatelessWidget {
         ],
       ),
       child: Icon(icon, color: Colors.white, size: 18),
+    );
+  }
+}
+
+class _MapGuidanceBanner extends StatelessWidget {
+  const _MapGuidanceBanner({required this.guidance});
+
+  final RouteGuidance guidance;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = guidance.isOffRoute ? Colors.deepOrange : moveaBlue;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .95),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(_routeInstructionIcon(guidance), color: color, size: 25),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    guidance.isOffRoute
+                        ? guidance.distanceToRouteMeters > 50000
+                            ? '距离计划路线过远'
+                            : '偏离 ${_formatMeters(guidance.distanceToRouteMeters)}'
+                        : _routeInstruction(guidance),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    guidance.isOffRoute
+                        ? '请回到蓝色计划路线后继续'
+                        : '剩余 ${_formatMeters(guidance.remainingMeters)} · '
+                            '已完成 ${(guidance.progress * 100).round()}%',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
