@@ -12,6 +12,7 @@ Movea 记录跑步、骑行、拉伸、力量训练、睡眠和健康数据，�
 - 复用：保存路线，并在下一次运动时跟随路线
 - 了解：睡眠、恢复状态和运动趋势
 - 学习：跑步、骑行、拉伸和力量训练知识
+- 动作库：内置 Workout Guide 的 302 个动作和 906 帧演示，支持按部位、类型和器械检索
 - 同步：本地优先，使用端到端加密数据备份到个人 GitHub 私密仓库
 - 多端：手机负责完整体验，Mac/iPad 负责查看和分析，Apple Watch 负责运动中的快速记录
 
@@ -73,7 +74,11 @@ fitness-app/
 ├── docs/
 │   ├── product.md              # 产品边界和核心流程
 │   ├── architecture.md         # 跨端架构和数据边界
-│   └── development.md          # 本地开发与验证方式
+│   ├── development.md          # 本地开发与验证方式
+│   └── testing-gps.md          # iOS Simulator 真实 GPS 轨迹回放
+├── tooling/
+│   ├── simulate-gps-route.sh   # Core Location 航点回放脚本
+│   └── fixtures/                # 可重复的测试轨迹
 ├── legacy/
 │   └── swiftui-prototype/      # 第一版 SwiftUI 原型，仅作迁移参考
 └── README.md
@@ -92,7 +97,9 @@ fitness-app/
 ## 当前状态
 
 - SwiftUI 原型：可运行，用于保留已确认的视觉和交互参考
-- Flutter 主应用：已具备本地运动记录持久化和恢复骨架
+- Flutter 主应用：已具备 MapLibre/OpenFreeMap 地图、可折叠运动控制、本地运动记录与详情、睡眠详情、训练计划模板和路线保存/跟随流程
+- 健身动作库：已导入动作元数据和 SVG 演示帧；训练计划可从动作库选动作，计划详情和训练中都可打开动作演示
+- 下一阶段路线图：见 [`docs/roadmap.md`](docs/roadmap.md)，继续完善前台 GPS 数据质量，再接入 HealthKit 和多设备同步
 - Apple Watch：架构和数据协议设计中
 - GitHub 加密同步：已有概念验证，尚未作为正式数据层发布
 

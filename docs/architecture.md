@@ -14,7 +14,7 @@ application
   start workout / finish workout / follow route / sync data
 
 domain
-  ActivityType / WorkoutRecord / Route / SleepSummary
+  ActivityType / WorkoutRecord / Route / SleepSummary / TrainingPlan
 
 data
   local persistence / encrypted backup / merge and recovery
@@ -67,18 +67,30 @@ GitHub 私密仓库是备份目标，不是在线数据库。客户端需要：
 4. 使用版本号和幂等 ID 去重
 5. 失败时保留本地待同步队列
 
-当前 Flutter 骨架已经用 `SharedPreferencesWorkoutPersistence` 保存运动摘要，
-作为离线优先的第一步；路线点、睡眠原始数据和加密 GitHub 备份仍沿用接口逐步接入。
+当前 Flutter 骨架已经用 `SharedPreferencesWorkoutPersistence` 保存运动摘要和 GPS 路线点，
+作为离线优先的第一步；训练计划和带路线点的路线摘要使用各自的 SharedPreferences 持久化，
+睡眠原始数据和加密 GitHub 备份仍沿用接口逐步接入。
+
+前台户外定位由 `GeolocatorLocationRepository` 负责权限、定位服务检查、5 米采样间隔和
+低精度点过滤；`ActivityPage` 负责运动生命周期、暂停/继续、距离累计和计划路线引导。
+当前配速优先使用平台提供的速度；若平台速度未知，则由最近一组带时间戳的 GPS 点按距离/时间
+计算，避免 Simulator 或部分设备返回未知速度时显示错误的空数据。
+路线引导使用计划路线线段投影计算偏离距离和沿线进度；运动详情可将实际 GPS 轨迹命名后
+写入 `RouteStore`，作为下一次可复用的“我的路线”。
+GPS 点还会携带速度、海拔和精度，运动记录从原始点派生平均速度、累计爬升和定位质量，
+避免把这些统计值与地图渲染逻辑耦合。
+当前版本不承诺锁屏或后台持续记录，发布前需单独配置 iOS Background Modes 并验证功耗。
 
 ## 地图与路线预览
 
-路线页和室外运动页使用 Flutter 的 `flutter_map` 作为跨端地图容器，运动地图通过
-`flutter_map_vector_tiles` 加载 MapLibre 风格的矢量瓦片，路线通过 `PolylineLayer` 绘制，
-起点和终点通过 `MarkerLayer` 标注。`apps/movea/assets/maps/movea-minimal.json` 是 Movea
-自己的地图主题：只保留水域、公园和主要道路，默认关闭 POI、地名和小路标签。当前开发预览
-使用 OpenFreeMap 的 OpenMapTiles 数据并显示署名，macOS 沙盒已开启出站网络权限；正式发布
-前需要根据覆盖区域、缓存策略和服务条款切换到经过确认的地图瓦片服务。真实定位轨迹仍由
-`LocationRepository` 提供，地图容器不直接依赖某个平台的定位 SDK。
+路线页和室外运动页直接使用 MapLibre Flutter 作为跨端地图容器，底图采用 OpenFreeMap 的
+OpenMapTiles 矢量瓦片，样式由 `apps/movea/assets/maps/movea-minimal.json` 完全控制。路线
+使用 MapLibre 的 `PolylineLayer` 绘制，起点和终点通过 `WidgetLayer` 标注。主题采用中等信息
+密度，保留水域、公园、主要/次要道路、适量道路名称、区域名称和少量运动相关 POI，隐藏普通
+商业 POI、建筑名称、铁路/地铁线和低等级小路标签。OpenFreeMap 不需要高德 Key，地图服务
+和样式也不再依赖高德自定义地图控制台；正式发布前仍需要根据覆盖区域、缓存策略和服务条款
+确认公共瓦片服务是否适合长期使用，必要时切换到 Protomaps PMTiles 自托管。真实定位轨迹
+仍由 `LocationRepository` 提供，地图容器不直接依赖某个平台的定位 SDK。
 
 ## Watch 数据流
 

@@ -14,9 +14,11 @@ dependencies:
     path: ../../packages/movea_data
   movea_design:
     path: ../../packages/movea_design
-  flutter_map: ^8.3.2
-  flutter_map_vector_tiles: ^2.8.1
   latlong2: ^0.9.1
+  geolocator: ^14.0.3
+  maplibre: ^0.3.6
+  maplibre_webview: ^0.3.5
+  flutter_svg: ^2.2.0
   shared_preferences: ^2.5.3
 
 dev_dependencies:
@@ -26,5 +28,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  config:
+    enable-swift-package-manager: true
   assets:
     - assets/maps/movea-minimal.json
+    - assets/exercises/

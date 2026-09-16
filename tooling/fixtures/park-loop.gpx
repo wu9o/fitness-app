@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Movea" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Movea Park Loop</name>
+  </metadata>
+  <trk>
+    <name>Movea Park Loop</name>
+    <trkseg>
+      <trkpt lat="31.2304" lon="121.4737">
+        <ele>12</ele>
+        <time>2026-09-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="31.2322" lon="121.4780">
+        <ele>18</ele>
+        <time>2026-09-15T08:01:20Z</time>
+      </trkpt>
+      <trkpt lat="31.2290" lon="121.4835">
+        <ele>24</ele>
+        <time>2026-09-15T08:03:00Z</time>
+      </trkpt>
+      <trkpt lat="31.2258" lon="121.4790">
+        <ele>22</ele>
+        <time>2026-09-15T08:04:20Z</time>
+      </trkpt>
+      <trkpt lat="31.2244" lon="121.4720">
+        <ele>29</ele>
+        <time>2026-09-15T08:06:00Z</time>
+      </trkpt>
+      <trkpt lat="31.2280" lon="121.4705">
+        <ele>26</ele>
+        <time>2026-09-15T08:07:20Z</time>
+      </trkpt>
+      <trkpt lat="31.2304" lon="121.4737">
+        <ele>30</ele>
+        <time>2026-09-15T08:09:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
