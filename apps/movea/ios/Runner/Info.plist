@@ -31,7 +31,7 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>运动开始后即使锁屏或切换应用，也需要持续记录 GPS 路线和距离。</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>用于读取睡眠、体重、步数和静息心率，帮助你回顾运动恢复状态。</string>
+	<string>用于读取睡眠、体重、步数、心率和运动记录，帮助你回顾训练与恢复状态。</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Movea 当前不会写入或修改你的健康数据。</string>
 	<key>UIApplicationSceneManifest</key>

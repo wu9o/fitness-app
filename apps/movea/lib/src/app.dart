@@ -45,6 +45,7 @@ class _MoveaShellState extends State<MoveaShell> {
   final RouteStore routeStore = RouteStore();
   final ActiveWorkoutStore activeWorkoutStore = ActiveWorkoutStore();
   late final HealthStore healthStore;
+  late final DeviceWorkoutRepository deviceWorkoutRepository;
   int selectedIndex = 0;
   RouteSummary? selectedRoute;
   ActivityType? selectedActivity;
@@ -67,6 +68,9 @@ class _MoveaShellState extends State<MoveaShell> {
           ? UnsupportedHealthRepository()
           : PlatformHealthRepository(),
     );
+    deviceWorkoutRepository = _isFlutterTest
+        ? UnsupportedDeviceWorkoutRepository()
+        : PlatformDeviceWorkoutRepository();
     unawaited(healthStore.restore());
     unawaited(_restoreActiveWorkout());
   }
@@ -181,6 +185,7 @@ class _MoveaShellState extends State<MoveaShell> {
           routeStore: routeStore,
           planStore: planStore,
           exerciseStore: exerciseStore,
+          deviceWorkoutRepository: deviceWorkoutRepository,
           onStart: openActivity),
       HealthPage(store: healthStore),
       RoutesPage(store: routeStore, onFollow: openRoute),
@@ -761,6 +766,7 @@ class SportsDashboardPage extends StatelessWidget {
     required this.routeStore,
     required this.planStore,
     required this.exerciseStore,
+    required this.deviceWorkoutRepository,
     required this.onStart,
     super.key,
   });
@@ -769,6 +775,7 @@ class SportsDashboardPage extends StatelessWidget {
   final RouteStore routeStore;
   final TrainingPlanStore planStore;
   final ExerciseCatalogStore exerciseStore;
+  final DeviceWorkoutRepository deviceWorkoutRepository;
   final VoidCallback onStart;
 
   void openHistory(BuildContext context) {
@@ -951,11 +958,20 @@ class SportsDashboardPage extends StatelessWidget {
                       _SportsHubLink(
                           icon: Icons.insights_outlined,
                           title: '运动状态',
-                          subtitle: '频率、距离与恢复提醒',
+                          subtitle: '负荷趋势与恢复提醒',
                           onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (_) =>
                                       WorkoutStatusPage(store: store)))),
+                      _SportsHubLink(
+                          icon: Icons.watch_outlined,
+                          title: '设备运动',
+                          subtitle: '从 HealthKit 导入真实指标',
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => DeviceWorkoutImportPage(
+                                      store: store,
+                                      repository: deviceWorkoutRepository)))),
                     ],
                   );
                 },
@@ -1724,6 +1740,227 @@ class _ReportMetric extends StatelessWidget {
   }
 }
 
+class DeviceWorkoutImportPage extends StatefulWidget {
+  const DeviceWorkoutImportPage({
+    required this.store,
+    required this.repository,
+    super.key,
+  });
+
+  final WorkoutStore store;
+  final DeviceWorkoutRepository repository;
+
+  @override
+  State<DeviceWorkoutImportPage> createState() =>
+      _DeviceWorkoutImportPageState();
+}
+
+class _DeviceWorkoutImportPageState extends State<DeviceWorkoutImportPage> {
+  List<WorkoutRecord> candidates = const [];
+  bool loading = false;
+  bool importing = false;
+  bool requested = false;
+  Object? error;
+
+  bool isImported(WorkoutRecord candidate) => widget.store.records.any(
+        (record) =>
+            record.id == candidate.id ||
+            (candidate.sourceWorkoutId != null &&
+                record.sourceWorkoutId == candidate.sourceWorkoutId),
+      );
+
+  Future<void> load() async {
+    setState(() {
+      loading = true;
+      requested = true;
+      error = null;
+    });
+    try {
+      final values = await widget.repository.readRecentWorkouts(days: 30);
+      if (!mounted) return;
+      setState(() => candidates = values);
+    } on Object catch (value) {
+      if (!mounted) return;
+      setState(() => error = value);
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> importRecords(Iterable<WorkoutRecord> records) async {
+    setState(() => importing = true);
+    final count = await widget.store.importAndPersist(records);
+    if (!mounted) return;
+    setState(() => importing = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(count == 0 ? '没有新的设备运动可导入' : '已导入 $count 条设备运动'),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = candidates.where((record) => !isImported(record)).toList();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('设备运动'),
+        actions: [
+          IconButton(
+            onPressed: loading || !requested ? null : load,
+            tooltip: '重新读取',
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: MoveaContentFrame(
+        maxWidth: 760,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
+          children: [
+            const Text('从设备导入',
+                style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            const Text('读取最近 30 天的 HealthKit 运动；只有你确认后才会写入 Movea。',
+                style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 16),
+            const Card(
+              color: moveaLavender,
+              child: ListTile(
+                leading: Icon(Icons.verified_user_outlined, color: moveaBlue),
+                title: Text('真实来源，不补造数据',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text('心率、活动能量和距离仅在 HealthKit 对该次运动提供时显示。'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (!requested)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.watch_outlined,
+                          size: 42, color: moveaBlue),
+                      const SizedBox(height: 10),
+                      const Text('准备读取设备运动',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 5),
+                      const Text('点击后系统才会请求健康数据权限；Movea 只读取，不修改健康数据。',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.black54)),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: load,
+                        icon: const Icon(Icons.health_and_safety_outlined),
+                        label: const Text('读取 HealthKit 运动'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 64),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (error != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.health_and_safety_outlined,
+                          size: 38, color: moveaCoral),
+                      const SizedBox(height: 10),
+                      const Text('暂时无法读取 HealthKit',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 5),
+                      Text('$error',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.black54)),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: load,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (candidates.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(22),
+                  child: Column(
+                    children: [
+                      Icon(Icons.watch_off_outlined,
+                          size: 40, color: Colors.black38),
+                      SizedBox(height: 10),
+                      Text('最近 30 天没有可导入的运动',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800)),
+                      SizedBox(height: 5),
+                      Text('支持跑步、骑行、拉伸和力量训练；模拟器通常不会包含真实健康数据。',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                        '${candidates.length} 条设备运动 · ${pending.length} 条待导入',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                  FilledButton(
+                    onPressed: pending.isEmpty || importing
+                        ? null
+                        : () => importRecords(pending),
+                    child: Text(importing ? '导入中…' : '导入全部'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              for (final record in candidates)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Card(
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: moveaMint,
+                        child: Text(record.activity.icon),
+                      ),
+                      title: Text(record.activity.label,
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text(
+                        '${record.startedAt.month}月${record.startedAt.day}日 · ${formatDuration(record.duration)} · ${record.sourceDevice}\n'
+                        '${record.distanceMeters > 0 ? record.distanceLabel : '无距离'} · ${record.averageHeartRateBpm == null ? '无心率' : '均值 ${record.averageHeartRateBpm!.round()} 次/分'}',
+                      ),
+                      isThreeLine: true,
+                      trailing: isImported(record)
+                          ? const Chip(label: Text('已导入'))
+                          : TextButton(
+                              onPressed: importing
+                                  ? null
+                                  : () => importRecords([record]),
+                              child: const Text('导入'),
+                            ),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class WorkoutStatusPage extends StatelessWidget {
   const WorkoutStatusPage({required this.store, super.key});
 
@@ -1751,6 +1988,18 @@ class WorkoutStatusPage extends StatelessWidget {
     final previousLoad = totalLoad(previousRecords);
     final ratedCount =
         recentRecords.where((record) => record.perceivedEffort != null).length;
+    final deviceMetrics = records.where((record) => record.hasDeviceMetrics);
+    final latestDeviceMetric =
+        deviceMetrics.isEmpty ? null : deviceMetrics.first;
+    final today = DateTime(now.year, now.month, now.day);
+    final loadByWeek = List<int>.generate(4, (index) {
+      final end = today
+          .add(const Duration(days: 1))
+          .subtract(Duration(days: index * 7));
+      final start = end.subtract(const Duration(days: 7));
+      return totalLoad(records.where((record) =>
+          !record.startedAt.isBefore(start) && record.startedAt.isBefore(end)));
+    }).reversed.toList(growable: false);
     final lastWasHard = last?.perceivedEffort == WorkoutEffort.hard ||
         last?.perceivedEffort == WorkoutEffort.maximum;
     final String recoveryTitle;
@@ -1793,7 +2042,7 @@ class WorkoutStatusPage extends StatelessWidget {
                 value: outdoorDistance == 0
                     ? '--'
                     : '${outdoorDistance.toStringAsFixed(1)} km',
-                note: '来自 GPS 运动记录'),
+                note: '来自 GPS 与已导入设备运动'),
             _StatusCard(
                 icon: Icons.schedule,
                 title: '最近一次运动',
@@ -1808,6 +2057,24 @@ class WorkoutStatusPage extends StatelessWidget {
                 note: ratedCount == 0
                     ? '还没有标记运动感受'
                     : '$ratedCount 次已评估 · 仅用于个人趋势比较'),
+            const SizedBox(height: 2),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('近 28 天负荷趋势',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    const Text('每周汇总已标记体感的运动',
+                        style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    const SizedBox(height: 14),
+                    _FourWeekLoadChart(values: loadByWeek),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
             Card(
               color: moveaLemon,
@@ -1819,16 +2086,85 @@ class WorkoutStatusPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            const Card(
+            Card(
               child: ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('心率与能量仍等待可信设备数据'),
-                subtitle: Text(
-                    '当前不会根据路线或速度虚构心率；后续由 Apple Watch、HealthKit 或 Health Connect 提供。'),
+                leading: Icon(
+                    latestDeviceMetric == null
+                        ? Icons.info_outline
+                        : Icons.watch_outlined,
+                    color: latestDeviceMetric == null ? null : moveaBlue),
+                title: Text(
+                    latestDeviceMetric == null ? '心率与能量仍等待可信设备数据' : '设备指标已接入'),
+                subtitle: Text(latestDeviceMetric == null
+                    ? '当前不会根据路线或速度虚构心率；可从“设备运动”读取 HealthKit。'
+                    : _deviceMetricSummary(latestDeviceMetric)),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+String _deviceMetricSummary(WorkoutRecord record) {
+  final values = <String>[];
+  if (record.averageHeartRateBpm != null) {
+    values.add('平均心率 ${record.averageHeartRateBpm!.round()} 次/分');
+  }
+  if (record.activeEnergyKilocalories != null) {
+    values.add('活动能量 ${record.activeEnergyKilocalories!.round()} 千卡');
+  }
+  final metricText = values.isEmpty ? '设备运动摘要' : values.join(' · ');
+  return '${record.startedAt.month}月${record.startedAt.day}日 · $metricText · ${record.dataSource.label}';
+}
+
+class _FourWeekLoadChart extends StatelessWidget {
+  const _FourWeekLoadChart({required this.values});
+
+  final List<int> values;
+
+  @override
+  Widget build(BuildContext context) {
+    final maximum = values.fold<int>(0, math.max);
+    return SizedBox(
+      height: 126,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var index = 0; index < values.length; index++)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 7),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(values[index] == 0 ? '--' : '${values[index]}',
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 5),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      height:
+                          maximum == 0 ? 8 : 66 * values[index] / maximum + 8,
+                      decoration: BoxDecoration(
+                        color: values[index] == 0
+                            ? Colors.black12
+                            : index == values.length - 1
+                                ? moveaCoral
+                                : moveaBlue.withValues(alpha: .55),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(index == values.length - 1 ? '本周' : '${3 - index}周前',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.black54)),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -5040,6 +5376,12 @@ class WorkoutDetailPage extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text('$dateLabel · ${record.sourceDevice}',
                               style: const TextStyle(color: Colors.black54)),
+                          const SizedBox(height: 4),
+                          Text(record.dataSource.label,
+                              style: const TextStyle(
+                                  color: moveaBlue,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700)),
                         ],
                       ),
                     ),
@@ -5079,6 +5421,18 @@ class WorkoutDetailPage extends StatelessWidget {
                         ? '${record.routePoints.length} 个'
                         : '不适用'),
                 const _DetailMetric(label: '数据状态', value: '本地已保存'),
+                if (record.averageHeartRateBpm != null)
+                  _DetailMetric(
+                      label: '平均心率',
+                      value: '${record.averageHeartRateBpm!.round()} 次/分'),
+                if (record.maximumHeartRateBpm != null)
+                  _DetailMetric(
+                      label: '最高心率',
+                      value: '${record.maximumHeartRateBpm!.round()} 次/分'),
+                if (record.activeEnergyKilocalories != null)
+                  _DetailMetric(
+                      label: '活动能量',
+                      value: '${record.activeEnergyKilocalories!.round()} 千卡'),
               ],
             ),
             const SizedBox(height: 18),
@@ -5088,7 +5442,7 @@ class WorkoutDetailPage extends StatelessWidget {
               highlighted: justCompleted,
             ),
             const SizedBox(height: 18),
-            const MoveaSectionTitle('实际 GPS 轨迹'),
+            MoveaSectionTitle(record.isDeviceImported ? '设备记录来源' : '实际 GPS 轨迹'),
             const SizedBox(height: 10),
             if (record.routePoints.length > 1)
               Column(
@@ -5126,7 +5480,9 @@ class WorkoutDetailPage extends StatelessWidget {
                       Expanded(
                         child: Text(
                           record.activity.usesLocation
-                              ? '本次没有采集到足够的 GPS 点位，已保存时长和距离摘要。下次开始前请打开系统定位服务。'
+                              ? record.isDeviceImported
+                                  ? '这条记录从 ${record.dataSource.label} 导入。当前只同步运动摘要和可信设备指标，不把不存在的路线点补画成轨迹。'
+                                  : '本次没有采集到足够的 GPS 点位，已保存时长和距离摘要。下次开始前请打开系统定位服务。'
                               : '室内训练不记录地图路线，动作明细和训练时长会保存在训练记录中。',
                           style: const TextStyle(color: Colors.black54),
                         ),
@@ -5135,7 +5491,7 @@ class WorkoutDetailPage extends StatelessWidget {
                   ),
                 ),
               ),
-            if (record.activity.usesLocation) ...[
+            if (record.activity.usesLocation && !record.isDeviceImported) ...[
               const SizedBox(height: 18),
               const MoveaSectionTitle('GPS 数据质量'),
               const SizedBox(height: 10),
@@ -5272,7 +5628,9 @@ class WorkoutDetailPage extends StatelessWidget {
                 title: const Text('下一步可完善',
                     style: TextStyle(fontWeight: FontWeight.w800)),
                 subtitle: Text(record.activity.usesLocation
-                    ? '心率区间、卡路里和后台持续记录'
+                    ? record.hasDeviceMetrics
+                        ? '心率区间分析与设备路线同步'
+                        : '心率区间、活动能量和设备数据导入'
                     : '动作完成度、训练负荷和恢复建议'),
               ),
             ),

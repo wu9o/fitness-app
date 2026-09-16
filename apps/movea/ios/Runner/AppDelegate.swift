@@ -21,11 +21,141 @@ import UIKit
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
     )
     healthChannel.setMethodCallHandler { [weak self] call, result in
-      guard call.method == "readHealthSnapshot" else {
+      switch call.method {
+      case "readHealthSnapshot":
+        self?.readHealthSnapshot(result: result)
+      case "readRecentWorkouts":
+        let arguments = call.arguments as? [String: Any]
+        let days = arguments?["days"] as? Int ?? 30
+        self?.readRecentWorkouts(days: days, result: result)
+      default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func readRecentWorkouts(days: Int, result: @escaping FlutterResult) {
+    guard HKHealthStore.isHealthDataAvailable() else {
+      result(FlutterError(code: "unavailable", message: "HealthKit 在此设备不可用", details: nil))
+      return
+    }
+
+    let workoutType = HKObjectType.workoutType()
+    var readTypes: Set<HKObjectType> = [workoutType]
+    let metricTypes = [
+      HKObjectType.quantityType(forIdentifier: .heartRate),
+      HKObjectType.quantityType(forIdentifier: .activeEnergyBurned),
+      HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning),
+      HKObjectType.quantityType(forIdentifier: .distanceCycling),
+    ].compactMap { $0 }
+    readTypes.formUnion(metricTypes)
+
+    healthStore.requestAuthorization(toShare: [], read: readTypes) { [weak self] granted, error in
+      guard let self else { return }
+      if let error {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "authorizationDenied", message: error.localizedDescription, details: nil))
+        }
         return
       }
-      self?.readHealthSnapshot(result: result)
+      guard granted else {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "authorizationDenied", message: "未获得运动数据读取授权", details: nil))
+        }
+        return
+      }
+      self.queryRecentWorkouts(days: max(1, min(days, 365)), result: result)
+    }
+  }
+
+  private func queryRecentWorkouts(days: Int, result: @escaping FlutterResult) {
+    let start = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date().addingTimeInterval(-2_592_000)
+    let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
+    let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+    let query = HKSampleQuery(
+      sampleType: HKObjectType.workoutType(),
+      predicate: predicate,
+      limit: 100,
+      sortDescriptors: [sort]
+    ) { [weak self] _, samples, error in
+      guard let self else { return }
+      if let error {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "queryFailed", message: error.localizedDescription, details: nil))
+        }
+        return
+      }
+      let workouts = (samples as? [HKWorkout] ?? []).compactMap(self.encodeWorkout)
+      DispatchQueue.main.async { result(workouts) }
+    }
+    healthStore.execute(query)
+  }
+
+  private func encodeWorkout(_ workout: HKWorkout) -> [String: Any]? {
+    guard let activity = moveaActivity(for: workout.workoutActivityType) else { return nil }
+    var encoded: [String: Any] = [
+      "sourceWorkoutId": workout.uuid.uuidString,
+      "activity": activity,
+      "startedAt": ISO8601DateFormatter().string(from: workout.startDate),
+      "durationSeconds": workout.duration,
+      "sourceDevice": workout.device?.name ?? workout.sourceRevision.source.name,
+    ]
+
+    let distanceIdentifier: HKQuantityTypeIdentifier? = switch workout.workoutActivityType {
+    case .running:
+      .distanceWalkingRunning
+    case .cycling:
+      .distanceCycling
+    default:
+      nil
+    }
+    if #available(iOS 16.0, *) {
+      if let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate),
+         let statistics = workout.statistics(for: heartRateType) {
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        if let average = statistics.averageQuantity()?.doubleValue(for: unit), average > 0 {
+          encoded["averageHeartRateBpm"] = average
+        }
+        if let maximum = statistics.maximumQuantity()?.doubleValue(for: unit), maximum > 0 {
+          encoded["maximumHeartRateBpm"] = maximum
+        }
+      }
+
+      if let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned),
+         let energy = workout.statistics(for: energyType)?.sumQuantity()?.doubleValue(for: .kilocalorie()),
+         energy > 0 {
+        encoded["activeEnergyKilocalories"] = energy
+      }
+
+      if let distanceIdentifier,
+         let distanceType = HKObjectType.quantityType(forIdentifier: distanceIdentifier),
+         let distance = workout.statistics(for: distanceType)?.sumQuantity()?.doubleValue(for: .meter()),
+         distance > 0 {
+        encoded["distanceMeters"] = distance
+      }
+    } else {
+      if let energy = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()), energy > 0 {
+        encoded["activeEnergyKilocalories"] = energy
+      }
+      if let distance = workout.totalDistance?.doubleValue(for: .meter()), distance > 0 {
+        encoded["distanceMeters"] = distance
+      }
+    }
+    return encoded
+  }
+
+  private func moveaActivity(for type: HKWorkoutActivityType) -> String? {
+    switch type {
+    case .running:
+      return "run"
+    case .cycling:
+      return "ride"
+    case .flexibility, .mindAndBody, .yoga:
+      return "stretch"
+    case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining:
+      return "strength"
+    default:
+      return nil
     }
   }
 

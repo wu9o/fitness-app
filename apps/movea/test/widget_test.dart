@@ -26,6 +26,25 @@ class _FakeHealthRepository implements HealthRepository {
   }
 }
 
+class _FakeDeviceWorkoutRepository implements DeviceWorkoutRepository {
+  @override
+  Future<List<WorkoutRecord>> readRecentWorkouts({int days = 30}) async => [
+        WorkoutRecord(
+          id: 'healthkit-device-workout',
+          activity: ActivityType.run,
+          startedAt: DateTime(2026, 9, 15, 7, 30),
+          duration: const Duration(minutes: 36),
+          distanceMeters: 6200,
+          sourceDevice: 'Apple Watch',
+          dataSource: WorkoutDataSource.healthKit,
+          sourceWorkoutId: 'device-workout',
+          averageHeartRateBpm: 148,
+          maximumHeartRateBpm: 171,
+          activeEnergyKilocalories: 438,
+        ),
+      ];
+}
+
 class _GatedActiveWorkoutPersistence implements ActiveWorkoutPersistence {
   final Completer<void> writeGate = Completer<void>();
   ActiveWorkoutDraft? stored;
@@ -179,6 +198,7 @@ void main() {
     expect(find.text('训练日历'), findsOneWidget);
     expect(find.text('运动周报'), findsOneWidget);
     expect(find.text('运动状态'), findsOneWidget);
+    expect(find.text('设备运动'), findsOneWidget);
 
     await tester.tap(find.text('训练日历'));
     await tester.pumpAndSettle();
@@ -193,6 +213,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('每日运动时长'), findsOneWidget);
     expect(find.text('运动类型分布'), findsOneWidget);
+  });
+
+  testWidgets('Device workouts are previewed and explicitly imported',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = WorkoutStore();
+    await store.restore();
+    await tester.pumpWidget(MaterialApp(
+      home: DeviceWorkoutImportPage(
+        store: store,
+        repository: _FakeDeviceWorkoutRepository(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('从设备导入'), findsOneWidget);
+    expect(find.text('读取 HealthKit 运动'), findsOneWidget);
+    expect(store.records, isEmpty);
+
+    await tester.tap(find.text('读取 HealthKit 运动'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Apple Watch'), findsOneWidget);
+    expect(find.textContaining('均值 148 次/分'), findsOneWidget);
+    expect(store.records, isEmpty);
+
+    await tester.tap(find.text('导入'));
+    await tester.pumpAndSettle();
+    expect(store.records, hasLength(1));
+    expect(store.records.single.dataSource, WorkoutDataSource.healthKit);
+    expect(find.text('已导入'), findsOneWidget);
   });
 
   testWidgets('Movea settings describe the open map stack', (tester) async {
@@ -438,6 +488,11 @@ void main() {
       plannedActions: 6,
       discardedLocationSamples: 3,
       perceivedEffort: WorkoutEffort.hard,
+      dataSource: WorkoutDataSource.healthKit,
+      sourceWorkoutId: 'healthkit-persistence-test',
+      averageHeartRateBpm: 142,
+      maximumHeartRateBpm: 169,
+      activeEnergyKilocalories: 512,
     ));
     await Future<void>.delayed(Duration.zero);
 
@@ -457,6 +512,31 @@ void main() {
     expect(restored.records.single.discardedLocationSamples, 3);
     expect(restored.records.single.perceivedEffort, WorkoutEffort.hard);
     expect(restored.records.single.subjectiveTrainingLoad, 294);
+    expect(restored.records.single.dataSource, WorkoutDataSource.healthKit);
+    expect(
+        restored.records.single.sourceWorkoutId, 'healthkit-persistence-test');
+    expect(restored.records.single.averageHeartRateBpm, 142);
+    expect(restored.records.single.maximumHeartRateBpm, 169);
+    expect(restored.records.single.activeEnergyKilocalories, 512);
+  });
+
+  test('WorkoutStore de-duplicates imported source workouts', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = WorkoutStore();
+    await store.restore();
+    WorkoutRecord imported(String id) => WorkoutRecord(
+          id: id,
+          activity: ActivityType.run,
+          startedAt: DateTime(2026, 9, 15),
+          duration: const Duration(minutes: 30),
+          distanceMeters: 5000,
+          dataSource: WorkoutDataSource.healthKit,
+          sourceWorkoutId: 'same-healthkit-uuid',
+        );
+
+    expect(await store.importAndPersist([imported('first')]), 1);
+    expect(await store.importAndPersist([imported('second')]), 0);
+    expect(store.records, hasLength(1));
   });
 
   test('ActiveWorkoutStore restores an unfinished GPS workout', () async {
@@ -751,6 +831,8 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('适中'));
+    await tester.pump();
     await tester.tap(find.text('适中'));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 20)),

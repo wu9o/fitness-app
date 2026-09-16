@@ -33,34 +33,40 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
   }
 
   static Map<String, dynamic> _encodeRecord(WorkoutRecord record) => {
-        'id': record.id,
-        'activity': record.activity.name,
-        'startedAt': record.startedAt.toIso8601String(),
-        'durationSeconds': record.duration.inSeconds,
-        'distanceMeters': record.distanceMeters,
-        'routePoints':
-            record.routePoints.map(_encodePoint).toList(growable: false),
-        'sourceDevice': record.sourceDevice,
-        if (record.trainingPlanId != null)
-          'trainingPlanId': record.trainingPlanId,
-        'completedActions': record.completedActions,
-        'plannedActions': record.plannedActions,
-        'discardedLocationSamples': record.discardedLocationSamples,
-        if (record.perceivedEffort != null)
-          'perceivedEffort': record.perceivedEffort!.name,
-      };
+    'id': record.id,
+    'activity': record.activity.name,
+    'startedAt': record.startedAt.toIso8601String(),
+    'durationSeconds': record.duration.inSeconds,
+    'distanceMeters': record.distanceMeters,
+    'routePoints': record.routePoints.map(_encodePoint).toList(growable: false),
+    'sourceDevice': record.sourceDevice,
+    if (record.trainingPlanId != null) 'trainingPlanId': record.trainingPlanId,
+    'completedActions': record.completedActions,
+    'plannedActions': record.plannedActions,
+    'discardedLocationSamples': record.discardedLocationSamples,
+    if (record.perceivedEffort != null)
+      'perceivedEffort': record.perceivedEffort!.name,
+    'dataSource': record.dataSource.name,
+    if (record.sourceWorkoutId != null)
+      'sourceWorkoutId': record.sourceWorkoutId,
+    if (record.averageHeartRateBpm != null)
+      'averageHeartRateBpm': record.averageHeartRateBpm,
+    if (record.maximumHeartRateBpm != null)
+      'maximumHeartRateBpm': record.maximumHeartRateBpm,
+    if (record.activeEnergyKilocalories != null)
+      'activeEnergyKilocalories': record.activeEnergyKilocalories,
+  };
 
   static Map<String, dynamic> _encodePoint(LocationPoint point) => {
-        'latitude': point.latitude,
-        'longitude': point.longitude,
-        if (point.timestamp != null)
-          'timestamp': point.timestamp!.toIso8601String(),
-        if (point.accuracy != null) 'accuracy': point.accuracy,
-        if (point.speedMetersPerSecond != null)
-          'speedMetersPerSecond': point.speedMetersPerSecond,
-        if (point.altitudeMeters != null)
-          'altitudeMeters': point.altitudeMeters,
-      };
+    'latitude': point.latitude,
+    'longitude': point.longitude,
+    if (point.timestamp != null)
+      'timestamp': point.timestamp!.toIso8601String(),
+    if (point.accuracy != null) 'accuracy': point.accuracy,
+    if (point.speedMetersPerSecond != null)
+      'speedMetersPerSecond': point.speedMetersPerSecond,
+    if (point.altitudeMeters != null) 'altitudeMeters': point.altitudeMeters,
+  };
 
   static LocationPoint? _decodePoint(dynamic value) {
     if (value is! Map<String, dynamic>) return null;
@@ -90,8 +96,14 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
       for (final effort in WorkoutEffort.values) {
         if (effort.name == effortName) perceivedEffort = effort;
       }
+      final dataSourceName = json['dataSource'] as String?;
+      final dataSource = WorkoutDataSource.values.firstWhere(
+        (source) => source.name == dataSourceName,
+        orElse: () => WorkoutDataSource.localGps,
+      );
       return WorkoutRecord(
-        id: json['id'] as String? ??
+        id:
+            json['id'] as String? ??
             DateTime.now().microsecondsSinceEpoch.toString(),
         activity: activity,
         startedAt: DateTime.parse(json['startedAt'] as String),
@@ -110,6 +122,12 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
         discardedLocationSamples:
             (json['discardedLocationSamples'] as num?)?.toInt() ?? 0,
         perceivedEffort: perceivedEffort,
+        dataSource: dataSource,
+        sourceWorkoutId: json['sourceWorkoutId'] as String?,
+        averageHeartRateBpm: (json['averageHeartRateBpm'] as num?)?.toDouble(),
+        maximumHeartRateBpm: (json['maximumHeartRateBpm'] as num?)?.toDouble(),
+        activeEnergyKilocalories: (json['activeEnergyKilocalories'] as num?)
+            ?.toDouble(),
       );
     } on Object {
       return null;
@@ -119,7 +137,7 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
 
 class WorkoutStore extends ChangeNotifier {
   WorkoutStore({WorkoutPersistence? persistence})
-      : _persistence = persistence ?? SharedPreferencesWorkoutPersistence();
+    : _persistence = persistence ?? SharedPreferencesWorkoutPersistence();
 
   final WorkoutPersistence _persistence;
   final List<WorkoutRecord> _records = [];
@@ -147,6 +165,33 @@ class WorkoutStore extends ChangeNotifier {
       notifyListeners();
     }
     await _persistence.write(_records);
+  }
+
+  Future<int> importAndPersist(Iterable<WorkoutRecord> records) async {
+    if (!_isRestored) await restore();
+    final knownIds = _records.map((record) => record.id).toSet();
+    final knownSourceIds = _records
+        .map((record) => record.sourceWorkoutId)
+        .whereType<String>()
+        .toSet();
+    var imported = 0;
+    for (final record in records) {
+      final sourceId = record.sourceWorkoutId;
+      if (knownIds.contains(record.id) ||
+          (sourceId != null && knownSourceIds.contains(sourceId))) {
+        continue;
+      }
+      _records.add(record);
+      knownIds.add(record.id);
+      if (sourceId != null) knownSourceIds.add(sourceId);
+      imported++;
+    }
+    if (imported > 0) {
+      _records.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+      notifyListeners();
+      await _persistence.write(_records);
+    }
+    return imported;
   }
 
   Future<void> updateAndPersist(WorkoutRecord record) async {
@@ -244,8 +289,7 @@ class SharedPreferencesActiveWorkoutPersistence
 
 class ActiveWorkoutStore extends ChangeNotifier {
   ActiveWorkoutStore({ActiveWorkoutPersistence? persistence})
-      : _persistence =
-            persistence ?? SharedPreferencesActiveWorkoutPersistence();
+    : _persistence = persistence ?? SharedPreferencesActiveWorkoutPersistence();
 
   final ActiveWorkoutPersistence _persistence;
   ActiveWorkoutDraft? _draft;
@@ -330,17 +374,17 @@ class SharedPreferencesRoutePersistence implements RoutePersistence {
   }
 
   static Map<String, dynamic> _encodeRoute(RouteSummary route) => {
-        'id': route.id,
-        'name': route.name,
-        'distanceMeters': route.distanceMeters,
-        'isSaved': route.isSaved,
-        'estimatedMinutes': route.estimatedMinutes,
-        'elevationMeters': route.elevationMeters,
-        'tags': route.tags,
-        'points': route.points
-            .map(SharedPreferencesWorkoutPersistence._encodePoint)
-            .toList(growable: false),
-      };
+    'id': route.id,
+    'name': route.name,
+    'distanceMeters': route.distanceMeters,
+    'isSaved': route.isSaved,
+    'estimatedMinutes': route.estimatedMinutes,
+    'elevationMeters': route.elevationMeters,
+    'tags': route.tags,
+    'points': route.points
+        .map(SharedPreferencesWorkoutPersistence._encodePoint)
+        .toList(growable: false),
+  };
 
   static RouteSummary? _decodeRoute(Map<String, dynamic> json) {
     try {
@@ -367,7 +411,7 @@ class SharedPreferencesRoutePersistence implements RoutePersistence {
 
 class RouteStore extends ChangeNotifier {
   RouteStore({RoutePersistence? persistence})
-      : _persistence = persistence ?? SharedPreferencesRoutePersistence() {
+    : _persistence = persistence ?? SharedPreferencesRoutePersistence() {
     _routes.addAll(defaultRoutes());
   }
 
@@ -386,12 +430,14 @@ class RouteStore extends ChangeNotifier {
     final saved = await _persistence.read();
     final localRoutes = List<RouteSummary>.of(_routes);
     final localById = {for (final route in localRoutes) route.id: route};
-    final normalizedSaved = saved.map((route) {
-      final fallback = localById[route.id];
-      return route.points.isEmpty && fallback != null
-          ? route.copyWith(points: fallback.points)
-          : route;
-    }).toList(growable: false);
+    final normalizedSaved = saved
+        .map((route) {
+          final fallback = localById[route.id];
+          return route.points.isEmpty && fallback != null
+              ? route.copyWith(points: fallback.points)
+              : route;
+        })
+        .toList(growable: false);
     final savedIds = normalizedSaved.map((route) => route.id).toSet();
     _routes
       ..clear()
@@ -438,41 +484,41 @@ class RouteStore extends ChangeNotifier {
 }
 
 List<RouteSummary> defaultRoutes() => const [
-      RouteSummary(
-        id: 'park-loop',
-        name: '公园环线',
-        distanceMeters: 5200,
-        estimatedMinutes: 32,
-        elevationMeters: 80,
-        tags: ['环线', '简单', '补水点'],
-        points: [
-          LocationPoint(latitude: 31.2304, longitude: 121.4737),
-          LocationPoint(latitude: 31.2322, longitude: 121.4780),
-          LocationPoint(latitude: 31.2290, longitude: 121.4835),
-          LocationPoint(latitude: 31.2258, longitude: 121.4790),
-          LocationPoint(latitude: 31.2244, longitude: 121.4720),
-          LocationPoint(latitude: 31.2280, longitude: 121.4705),
-          LocationPoint(latitude: 31.2304, longitude: 121.4737),
-        ],
-      ),
-      RouteSummary(
-        id: 'river-view',
-        name: '河岸风景线',
-        distanceMeters: 8100,
-        estimatedMinutes: 54,
-        elevationMeters: 120,
-        tags: ['风景', '中等', '长距离'],
-        points: [
-          LocationPoint(latitude: 31.2288, longitude: 121.4690),
-          LocationPoint(latitude: 31.2340, longitude: 121.4655),
-          LocationPoint(latitude: 31.2390, longitude: 121.4700),
-          LocationPoint(latitude: 31.2415, longitude: 121.4780),
-          LocationPoint(latitude: 31.2360, longitude: 121.4850),
-          LocationPoint(latitude: 31.2295, longitude: 121.4825),
-          LocationPoint(latitude: 31.2288, longitude: 121.4690),
-        ],
-      ),
-    ];
+  RouteSummary(
+    id: 'park-loop',
+    name: '公园环线',
+    distanceMeters: 5200,
+    estimatedMinutes: 32,
+    elevationMeters: 80,
+    tags: ['环线', '简单', '补水点'],
+    points: [
+      LocationPoint(latitude: 31.2304, longitude: 121.4737),
+      LocationPoint(latitude: 31.2322, longitude: 121.4780),
+      LocationPoint(latitude: 31.2290, longitude: 121.4835),
+      LocationPoint(latitude: 31.2258, longitude: 121.4790),
+      LocationPoint(latitude: 31.2244, longitude: 121.4720),
+      LocationPoint(latitude: 31.2280, longitude: 121.4705),
+      LocationPoint(latitude: 31.2304, longitude: 121.4737),
+    ],
+  ),
+  RouteSummary(
+    id: 'river-view',
+    name: '河岸风景线',
+    distanceMeters: 8100,
+    estimatedMinutes: 54,
+    elevationMeters: 120,
+    tags: ['风景', '中等', '长距离'],
+    points: [
+      LocationPoint(latitude: 31.2288, longitude: 121.4690),
+      LocationPoint(latitude: 31.2340, longitude: 121.4655),
+      LocationPoint(latitude: 31.2390, longitude: 121.4700),
+      LocationPoint(latitude: 31.2415, longitude: 121.4780),
+      LocationPoint(latitude: 31.2360, longitude: 121.4850),
+      LocationPoint(latitude: 31.2295, longitude: 121.4825),
+      LocationPoint(latitude: 31.2288, longitude: 121.4690),
+    ],
+  ),
+];
 
 abstract interface class TrainingPlanPersistence {
   Future<List<TrainingPlan>> read();
@@ -510,27 +556,27 @@ class SharedPreferencesTrainingPlanPersistence
   }
 
   static Map<String, dynamic> _encodePlan(TrainingPlan plan) => {
-        'id': plan.id,
-        'name': plan.name,
-        'description': plan.description,
-        'rounds': plan.rounds,
-        'restBetweenRoundsSeconds': plan.restBetweenRoundsSeconds,
-        'difficulty': plan.difficulty,
-        'lastUsedAt': plan.lastUsedAt?.toIso8601String(),
-        'scheduledWeekdays': plan.scheduledWeekdays,
-        'actions': plan.actions
-            .map(
-              (action) => {
-                'id': action.id,
-                if (action.exerciseId != null) 'exerciseId': action.exerciseId,
-                'name': action.name,
-                'muscle': action.muscle,
-                'workSeconds': action.workSeconds,
-                'restSeconds': action.restSeconds,
-              },
-            )
-            .toList(growable: false),
-      };
+    'id': plan.id,
+    'name': plan.name,
+    'description': plan.description,
+    'rounds': plan.rounds,
+    'restBetweenRoundsSeconds': plan.restBetweenRoundsSeconds,
+    'difficulty': plan.difficulty,
+    'lastUsedAt': plan.lastUsedAt?.toIso8601String(),
+    'scheduledWeekdays': plan.scheduledWeekdays,
+    'actions': plan.actions
+        .map(
+          (action) => {
+            'id': action.id,
+            if (action.exerciseId != null) 'exerciseId': action.exerciseId,
+            'name': action.name,
+            'muscle': action.muscle,
+            'workSeconds': action.workSeconds,
+            'restSeconds': action.restSeconds,
+          },
+        )
+        .toList(growable: false),
+  };
 
   static TrainingPlan? _decodePlan(Map<String, dynamic> json) {
     try {
@@ -552,8 +598,8 @@ class SharedPreferencesTrainingPlanPersistence
         name: json['name'] as String,
         description: json['description'] as String,
         rounds: (json['rounds'] as num).toInt(),
-        restBetweenRoundsSeconds:
-            (json['restBetweenRoundsSeconds'] as num).toInt(),
+        restBetweenRoundsSeconds: (json['restBetweenRoundsSeconds'] as num)
+            .toInt(),
         difficulty: json['difficulty'] as String,
         actions: actions,
         lastUsedAt: json['lastUsedAt'] == null
@@ -576,8 +622,7 @@ class SharedPreferencesTrainingPlanPersistence
 
 class TrainingPlanStore extends ChangeNotifier {
   TrainingPlanStore({TrainingPlanPersistence? persistence})
-      : _persistence =
-            persistence ?? SharedPreferencesTrainingPlanPersistence() {
+    : _persistence = persistence ?? SharedPreferencesTrainingPlanPersistence() {
     _plans.addAll(defaultTrainingPlans());
   }
 
@@ -645,12 +690,16 @@ abstract interface class HealthRepository {
   Future<HealthSnapshot> readSnapshot();
 }
 
+abstract interface class DeviceWorkoutRepository {
+  Future<List<WorkoutRecord>> readRecentWorkouts({int days = 30});
+}
+
 /// Owns health loading state so every surface can render the same source
 /// status. A repository may later be backed by HealthKit, Health Connect, or
 /// local manual entries without changing the screens.
 class HealthStore extends ChangeNotifier {
   HealthStore({required HealthRepository repository})
-      : _repository = repository;
+    : _repository = repository;
 
   final HealthRepository _repository;
   HealthSnapshot _snapshot = HealthSnapshot.demo;

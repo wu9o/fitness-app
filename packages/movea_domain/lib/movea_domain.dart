@@ -4,6 +4,23 @@ enum ActivityType { run, ride, stretch, strength }
 
 enum WorkoutEffort { easy, moderate, hard, maximum }
 
+enum WorkoutDataSource { localGps, healthKit, healthConnect, manual }
+
+extension WorkoutDataSourceLabel on WorkoutDataSource {
+  String get label {
+    switch (this) {
+      case WorkoutDataSource.localGps:
+        return 'Movea GPS';
+      case WorkoutDataSource.healthKit:
+        return 'HealthKit';
+      case WorkoutDataSource.healthConnect:
+        return 'Health Connect';
+      case WorkoutDataSource.manual:
+        return '手动记录';
+    }
+  }
+}
+
 extension WorkoutEffortLabel on WorkoutEffort {
   String get label {
     switch (this) {
@@ -77,6 +94,11 @@ class WorkoutRecord {
     this.plannedActions = 0,
     this.discardedLocationSamples = 0,
     this.perceivedEffort,
+    this.dataSource = WorkoutDataSource.localGps,
+    this.sourceWorkoutId,
+    this.averageHeartRateBpm,
+    this.maximumHeartRateBpm,
+    this.activeEnergyKilocalories,
   });
 
   final String id;
@@ -91,8 +113,22 @@ class WorkoutRecord {
   final int plannedActions;
   final int discardedLocationSamples;
   final WorkoutEffort? perceivedEffort;
+  final WorkoutDataSource dataSource;
+  final String? sourceWorkoutId;
+  final double? averageHeartRateBpm;
+  final double? maximumHeartRateBpm;
+  final double? activeEnergyKilocalories;
 
   bool get isTrainingPlanRecord => trainingPlanId != null;
+
+  bool get isDeviceImported =>
+      dataSource == WorkoutDataSource.healthKit ||
+      dataSource == WorkoutDataSource.healthConnect;
+
+  bool get hasDeviceMetrics =>
+      averageHeartRateBpm != null ||
+      maximumHeartRateBpm != null ||
+      activeEnergyKilocalories != null;
 
   double get planCompletion {
     if (plannedActions <= 0) return 0;
@@ -151,19 +187,24 @@ class WorkoutRecord {
   }
 
   WorkoutRecord copyWith({WorkoutEffort? perceivedEffort}) => WorkoutRecord(
-        id: id,
-        activity: activity,
-        startedAt: startedAt,
-        duration: duration,
-        distanceMeters: distanceMeters,
-        routePoints: routePoints,
-        sourceDevice: sourceDevice,
-        trainingPlanId: trainingPlanId,
-        completedActions: completedActions,
-        plannedActions: plannedActions,
-        discardedLocationSamples: discardedLocationSamples,
-        perceivedEffort: perceivedEffort ?? this.perceivedEffort,
-      );
+    id: id,
+    activity: activity,
+    startedAt: startedAt,
+    duration: duration,
+    distanceMeters: distanceMeters,
+    routePoints: routePoints,
+    sourceDevice: sourceDevice,
+    trainingPlanId: trainingPlanId,
+    completedActions: completedActions,
+    plannedActions: plannedActions,
+    discardedLocationSamples: discardedLocationSamples,
+    perceivedEffort: perceivedEffort ?? this.perceivedEffort,
+    dataSource: dataSource,
+    sourceWorkoutId: sourceWorkoutId,
+    averageHeartRateBpm: averageHeartRateBpm,
+    maximumHeartRateBpm: maximumHeartRateBpm,
+    activeEnergyKilocalories: activeEnergyKilocalories,
+  );
 }
 
 /// Recoverable snapshot of a workout that has started but has not finished.
@@ -309,8 +350,9 @@ RouteGuidance calculateRouteGuidance(
     final segmentSquared = dx * dx + dy * dy;
     final segmentLength = _routeDistance(start, end);
     segmentLengths.add(segmentLength);
-    final projection =
-        segmentSquared == 0 ? 0.0 : ((-ax * dx) + (-ay * dy)) / segmentSquared;
+    final projection = segmentSquared == 0
+        ? 0.0
+        : ((-ax * dx) + (-ay * dy)) / segmentSquared;
     final t = projection.clamp(0.0, 1.0).toDouble();
     final projectedX = ax + dx * t;
     final projectedY = ay + dy * t;
@@ -370,7 +412,8 @@ double _routeDistance(LocationPoint from, LocationPoint to) {
   final longitudeDelta = _routeRadians(to.longitude - from.longitude);
   final fromLatitude = _routeRadians(from.latitude);
   final toLatitude = _routeRadians(to.latitude);
-  final haversine = math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+  final haversine =
+      math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
       math.cos(fromLatitude) *
           math.cos(toLatitude) *
           math.sin(longitudeDelta / 2) *
@@ -385,7 +428,8 @@ double _routeBearing(LocationPoint from, LocationPoint to) {
   final toLatitude = _routeRadians(to.latitude);
   final longitudeDelta = _routeRadians(to.longitude - from.longitude);
   final y = math.sin(longitudeDelta) * math.cos(toLatitude);
-  final x = math.cos(fromLatitude) * math.sin(toLatitude) -
+  final x =
+      math.cos(fromLatitude) * math.sin(toLatitude) -
       math.sin(fromLatitude) * math.cos(toLatitude) * math.cos(longitudeDelta);
   return math.atan2(y, x) * 180 / math.pi;
 }
@@ -674,12 +718,13 @@ class TrainingPlan {
   }
 
   int get totalWorkSeconds => actions.fold(
-        0,
-        (total, action) => total + action.workSeconds + action.restSeconds,
-      );
+    0,
+    (total, action) => total + action.workSeconds + action.restSeconds,
+  );
 
   int get estimatedMinutes {
-    final seconds = (totalWorkSeconds * rounds) +
+    final seconds =
+        (totalWorkSeconds * rounds) +
         ((rounds - 1).clamp(0, 99) * restBetweenRoundsSeconds);
     return (seconds / 60).ceil();
   }
@@ -711,107 +756,107 @@ class TrainingPlan {
 }
 
 List<TrainingPlan> defaultTrainingPlans() => [
-      const TrainingPlan(
-        id: 'morning-activation',
-        name: '晨间全身激活',
-        description: '适合开始一天的轻量训练。',
-        rounds: 2,
-        restBetweenRoundsSeconds: 45,
-        difficulty: '初级',
-        scheduledWeekdays: [1, 3, 5],
-        actions: [
-          TrainingAction(
-            id: 'squat',
-            name: '深蹲',
-            muscle: '腿部与臀部',
-            workSeconds: 40,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'push-up',
-            name: '俯卧撑',
-            muscle: '胸部与手臂',
-            workSeconds: 30,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'bird-dog',
-            name: '鸟狗式',
-            muscle: '核心与稳定',
-            workSeconds: 40,
-            restSeconds: 20,
-          ),
-        ],
+  const TrainingPlan(
+    id: 'morning-activation',
+    name: '晨间全身激活',
+    description: '适合开始一天的轻量训练。',
+    rounds: 2,
+    restBetweenRoundsSeconds: 45,
+    difficulty: '初级',
+    scheduledWeekdays: [1, 3, 5],
+    actions: [
+      TrainingAction(
+        id: 'squat',
+        name: '深蹲',
+        muscle: '腿部与臀部',
+        workSeconds: 40,
+        restSeconds: 20,
       ),
-      const TrainingPlan(
-        id: 'core-stability',
-        name: '核心稳定',
-        description: '跑步日之外，保持躯干稳定。',
-        rounds: 3,
-        restBetweenRoundsSeconds: 45,
-        difficulty: '初级',
-        scheduledWeekdays: [2, 4],
-        actions: [
-          TrainingAction(
-            id: 'plank',
-            name: '平板支撑',
-            muscle: '核心稳定',
-            workSeconds: 40,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'dead-bug',
-            name: '死虫式',
-            muscle: '核心控制',
-            workSeconds: 40,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'glute-bridge',
-            name: '臀桥',
-            muscle: '臀部激活',
-            workSeconds: 45,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'bird-dog-core',
-            name: '鸟狗式',
-            muscle: '稳定控制',
-            workSeconds: 40,
-            restSeconds: 20,
-          ),
-        ],
+      TrainingAction(
+        id: 'push-up',
+        name: '俯卧撑',
+        muscle: '胸部与手臂',
+        workSeconds: 30,
+        restSeconds: 20,
       ),
-      const TrainingPlan(
-        id: 'post-run-recovery',
-        name: '跑后恢复',
-        description: '轻松拉伸，给身体一点恢复时间。',
-        rounds: 1,
-        restBetweenRoundsSeconds: 20,
-        difficulty: '初级',
-        scheduledWeekdays: [6],
-        actions: [
-          TrainingAction(
-            id: 'calf-stretch',
-            name: '小腿拉伸',
-            muscle: '小腿',
-            workSeconds: 40,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'hip-stretch',
-            name: '髋部拉伸',
-            muscle: '髋部',
-            workSeconds: 45,
-            restSeconds: 20,
-          ),
-          TrainingAction(
-            id: 'hamstring-stretch',
-            name: '腿后侧拉伸',
-            muscle: '腿后侧',
-            workSeconds: 45,
-            restSeconds: 20,
-          ),
-        ],
+      TrainingAction(
+        id: 'bird-dog',
+        name: '鸟狗式',
+        muscle: '核心与稳定',
+        workSeconds: 40,
+        restSeconds: 20,
       ),
-    ];
+    ],
+  ),
+  const TrainingPlan(
+    id: 'core-stability',
+    name: '核心稳定',
+    description: '跑步日之外，保持躯干稳定。',
+    rounds: 3,
+    restBetweenRoundsSeconds: 45,
+    difficulty: '初级',
+    scheduledWeekdays: [2, 4],
+    actions: [
+      TrainingAction(
+        id: 'plank',
+        name: '平板支撑',
+        muscle: '核心稳定',
+        workSeconds: 40,
+        restSeconds: 20,
+      ),
+      TrainingAction(
+        id: 'dead-bug',
+        name: '死虫式',
+        muscle: '核心控制',
+        workSeconds: 40,
+        restSeconds: 20,
+      ),
+      TrainingAction(
+        id: 'glute-bridge',
+        name: '臀桥',
+        muscle: '臀部激活',
+        workSeconds: 45,
+        restSeconds: 20,
+      ),
+      TrainingAction(
+        id: 'bird-dog-core',
+        name: '鸟狗式',
+        muscle: '稳定控制',
+        workSeconds: 40,
+        restSeconds: 20,
+      ),
+    ],
+  ),
+  const TrainingPlan(
+    id: 'post-run-recovery',
+    name: '跑后恢复',
+    description: '轻松拉伸，给身体一点恢复时间。',
+    rounds: 1,
+    restBetweenRoundsSeconds: 20,
+    difficulty: '初级',
+    scheduledWeekdays: [6],
+    actions: [
+      TrainingAction(
+        id: 'calf-stretch',
+        name: '小腿拉伸',
+        muscle: '小腿',
+        workSeconds: 40,
+        restSeconds: 20,
+      ),
+      TrainingAction(
+        id: 'hip-stretch',
+        name: '髋部拉伸',
+        muscle: '髋部',
+        workSeconds: 45,
+        restSeconds: 20,
+      ),
+      TrainingAction(
+        id: 'hamstring-stretch',
+        name: '腿后侧拉伸',
+        muscle: '腿后侧',
+        workSeconds: 45,
+        restSeconds: 20,
+      ),
+    ],
+  ),
+];

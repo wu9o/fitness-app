@@ -72,7 +72,10 @@ GitHub 私密仓库是备份目标，不是在线数据库。客户端需要：
 睡眠原始数据和加密 GitHub 备份仍沿用接口逐步接入。
 
 健康概览由 `HealthStore` 统一承载加载、刷新和来源状态。iOS 通过 `movea/health` MethodChannel
-读取 HealthKit 的睡眠、体重、步数和静息心率，并先转换为 `HealthSnapshot`；HealthKit 不可用、
+读取 HealthKit 的睡眠、体重、步数和静息心率，并先转换为 `HealthSnapshot`；独立的
+`DeviceWorkoutRepository` 在用户主动触发后读取最近 30 天的运动摘要，把 HealthKit UUID、设备、
+平均/最高心率、活动能量和距离转换为共享 `WorkoutRecord`。导入时按来源 UUID 幂等去重，缺失的指标
+保持为空，不从路线或速度推测。HealthKit 不可用、
 用户未授权或其他平台尚未接入时返回带 `HealthDataSource.demo` 的明确降级快照。这样首页和健康页
 不会各自写死一套健康数字，也为 Android Health Connect 复用同一接口。
 
@@ -89,8 +92,8 @@ GPS 点还会携带速度、海拔和精度，运动记录从原始点派生平�
 
 运动强度先采用用户在总结页主动选择的体感等级，记录到 `WorkoutRecord.perceivedEffort`。主观负荷
 使用“有效运动分钟 × 体感分值”形成 Movea 内部趋势分，只用于同一个人的周期比较，不替代心率、
-卡路里或专业训练建议。运动心率和能量消耗保持为空，直到 Apple Watch、HealthKit 或 Health Connect
-返回可信来源的数据。
+卡路里或专业训练建议。运动心率和能量仅在 HealthKit 或未来 Health Connect 返回可信来源时展示；
+导入的摘要没有路线点时，界面明确标注“设备记录来源”，不把摘要距离伪装成 GPS 轨迹。
 iOS 户外运动使用 `AppleSettings` 开启后台定位，并在 Runner 中声明 `location` Background Mode；
 应用存活时，锁屏或切换应用会继续采集 GPS。当前运动同时写入 `ActiveWorkoutStore` 草稿，异常退出后
 恢复为暂停状态，保留活动类型、计划路线、已采集轨迹、距离和有效时长。发布前仍需在多款真机上验证

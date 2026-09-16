@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart' hide ActivityType;
 import 'package:geolocator_apple/geolocator_apple.dart' as geo_apple;
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_domain/movea_domain.dart';
@@ -12,6 +12,12 @@ import 'package:movea_domain/movea_domain.dart';
 class UnsupportedHealthRepository implements HealthRepository {
   @override
   Future<HealthSnapshot> readSnapshot() async => HealthSnapshot.demo;
+}
+
+class UnsupportedDeviceWorkoutRepository implements DeviceWorkoutRepository {
+  @override
+  Future<List<WorkoutRecord>> readRecentWorkouts({int days = 30}) async =>
+      const [];
 }
 
 /// Health bridge used by Apple platforms today and Health Connect later on
@@ -94,6 +100,56 @@ class PlatformHealthRepository implements HealthRepository {
       default:
         return SleepStage.core;
     }
+  }
+}
+
+class PlatformDeviceWorkoutRepository implements DeviceWorkoutRepository {
+  static const _channel = MethodChannel('movea/health');
+
+  @override
+  Future<List<WorkoutRecord>> readRecentWorkouts({int days = 30}) async {
+    try {
+      final raw = await _channel.invokeListMethod<dynamic>(
+        'readRecentWorkouts',
+        {'days': days},
+      );
+      return (raw ?? const [])
+          .whereType<Map>()
+          .map((value) => _decodeWorkout(Map<String, dynamic>.from(value)))
+          .whereType<WorkoutRecord>()
+          .toList(growable: false);
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
+  static WorkoutRecord? _decodeWorkout(Map<String, dynamic> json) {
+    final sourceId = json['sourceWorkoutId'] as String?;
+    final startedAt = DateTime.tryParse(json['startedAt'] as String? ?? '');
+    final activity = switch (json['activity'] as String?) {
+      'run' => ActivityType.run,
+      'ride' => ActivityType.ride,
+      'stretch' => ActivityType.stretch,
+      'strength' => ActivityType.strength,
+      _ => null,
+    };
+    if (sourceId == null || startedAt == null || activity == null) return null;
+    return WorkoutRecord(
+      id: 'healthkit-$sourceId',
+      activity: activity,
+      startedAt: startedAt,
+      duration: Duration(
+        seconds: (json['durationSeconds'] as num?)?.round() ?? 0,
+      ),
+      distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0,
+      sourceDevice: json['sourceDevice'] as String? ?? 'Apple 健康',
+      dataSource: WorkoutDataSource.healthKit,
+      sourceWorkoutId: sourceId,
+      averageHeartRateBpm: (json['averageHeartRateBpm'] as num?)?.toDouble(),
+      maximumHeartRateBpm: (json['maximumHeartRateBpm'] as num?)?.toDouble(),
+      activeEnergyKilocalories:
+          (json['activeEnergyKilocalories'] as num?)?.toDouble(),
+    );
   }
 }
 
