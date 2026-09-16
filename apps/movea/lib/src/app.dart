@@ -43,6 +43,7 @@ class _MoveaShellState extends State<MoveaShell> {
   final TrainingPlanStore planStore = TrainingPlanStore();
   final ExerciseCatalogStore exerciseStore = ExerciseCatalogStore();
   final RouteStore routeStore = RouteStore();
+  late final HealthStore healthStore;
   int selectedIndex = 0;
   RouteSummary? selectedRoute;
   ActivityType? selectedActivity;
@@ -60,6 +61,12 @@ class _MoveaShellState extends State<MoveaShell> {
     locationRepository = _isFlutterTest
         ? UnsupportedLocationRepository()
         : GeolocatorLocationRepository();
+    healthStore = HealthStore(
+      repository: _isFlutterTest
+          ? UnsupportedHealthRepository()
+          : PlatformHealthRepository(),
+    );
+    unawaited(healthStore.restore());
   }
 
   void openActivity() {
@@ -136,14 +143,15 @@ class _MoveaShellState extends State<MoveaShell> {
           onHistory: openHistory,
           onHealth: openHealth,
           onSettings: openSettings,
-          exerciseStore: exerciseStore),
+          exerciseStore: exerciseStore,
+          healthStore: healthStore),
       SportsDashboardPage(
           store: store,
           routeStore: routeStore,
           planStore: planStore,
           exerciseStore: exerciseStore,
           onStart: openActivity),
-      const HealthPage(),
+      HealthPage(store: healthStore),
       RoutesPage(store: routeStore, onFollow: openRoute),
       const LearnPage(),
     ];
@@ -1774,6 +1782,7 @@ class HomePage extends StatelessWidget {
       required this.onHistory,
       required this.onHealth,
       required this.onSettings,
+      required this.healthStore,
       super.key});
 
   final WorkoutStore store;
@@ -1783,13 +1792,15 @@ class HomePage extends StatelessWidget {
   final VoidCallback onHistory;
   final VoidCallback onHealth;
   final VoidCallback onSettings;
+  final HealthStore healthStore;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: store,
+      animation: Listenable.merge([store, healthStore]),
       builder: (context, _) {
         final records = store.records;
+        final health = healthStore.snapshot;
         final outdoorDistance = store.outdoorDistanceMeters / 1000;
         final weeklyValue = outdoorDistance > 0
             ? '${outdoorDistance.toStringAsFixed(1)} km'
@@ -1856,10 +1867,11 @@ class HomePage extends StatelessWidget {
                     child: InkWell(
                       onTap: onHealth,
                       borderRadius: BorderRadius.circular(20),
-                      child: const _MetricCard(
+                      child: _MetricCard(
                           title: '昨晚睡眠',
-                          value: '7h 32m',
-                          note: '睡得不错 · 查看详情',
+                          value: formatHoursMinutes(health.sleep.duration),
+                          note:
+                              '${health.sleep.quality} · ${health.sourceLabel}',
                           color: moveaMint),
                     ),
                   ),
@@ -1884,10 +1896,11 @@ class HomePage extends StatelessWidget {
                     child: InkWell(
                       onTap: onHealth,
                       borderRadius: BorderRadius.circular(20),
-                      child: const _MetricCard(
+                      child: _MetricCard(
                           title: '当前体重',
-                          value: '68.4 kg',
-                          note: '较上周 -0.6 kg',
+                          value: '${health.weightKg.toStringAsFixed(1)} kg',
+                          note:
+                              '较上周 ${health.weightChangeKg.toStringAsFixed(1)} kg · ${health.sourceLabel}',
                           color: moveaLavender),
                     ),
                   ),
@@ -1896,11 +1909,11 @@ class HomePage extends StatelessWidget {
                     child: InkWell(
                       onTap: onHealth,
                       borderRadius: BorderRadius.circular(20),
-                      child: const _MetricCard(
+                      child: _MetricCard(
                           title: '静息心率',
-                          value: '58 bpm',
-                          note: '步数 8,240',
-                          color: Color(0xFFFFE8BF)),
+                          value: '${health.restingHeartRate} bpm',
+                          note: '步数 ${health.steps} · ${health.sourceLabel}',
+                          color: const Color(0xFFFFE8BF)),
                     ),
                   ),
                 ],
@@ -4984,144 +4997,208 @@ class _DetailMetric extends StatelessWidget {
 }
 
 class HealthPage extends StatelessWidget {
-  const HealthPage({super.key});
+  const HealthPage({required this.store, super.key});
+
+  final HealthStore store;
 
   @override
   Widget build(BuildContext context) {
-    const snapshot = HealthSnapshot.demo;
-    final sleep = snapshot.sleep;
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) {
+        final snapshot = store.snapshot;
+        final sleep = snapshot.sleep;
 
-    return MoveaContentFrame(
-      maxWidth: 820,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        children: [
-          Text('健康',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
-          const Text('了解身体，跑得更远', style: TextStyle(color: Colors.black54)),
-          const SizedBox(height: 14),
-          const Card(
-            color: moveaLavender,
-            child: ListTile(
-              leading: Icon(Icons.sync_outlined, color: moveaBlue),
-              title:
-                  Text('健康数据中心', style: TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('当前为演示数据 · 后续接入 HealthKit / Health Connect'),
-              trailing: Icon(Icons.chevron_right),
-            ),
-          ),
-          const SizedBox(height: 14),
-          InkWell(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => SleepDetailPage(summary: sleep))),
-            borderRadius: BorderRadius.circular(20),
-            child: Card(
-              color: moveaMint,
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      const Text('昨晚睡眠',
-                          style: TextStyle(fontWeight: FontWeight.w700)),
-                      const Spacer(),
-                      Text('${sleep.bedtime} → ${sleep.wakeTime}',
-                          style: const TextStyle(color: Colors.black54)),
-                      const SizedBox(width: 6),
-                      const Icon(Icons.chevron_right, size: 18),
-                    ]),
-                    const SizedBox(height: 8),
-                    Text(formatHoursMinutes(sleep.duration),
-                        style: const TextStyle(
-                            fontSize: 42,
-                            fontWeight: FontWeight.w800,
-                            color: moveaInk)),
-                    Text('睡眠质量：${sleep.quality} · 清醒 ${sleep.awakeMinutes} 分钟',
-                        style: const TextStyle(color: Colors.black54)),
-                  ],
+        return MoveaContentFrame(
+          maxWidth: 820,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            children: [
+              Text('健康',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.w800, color: moveaInk)),
+              const Text('了解身体，跑得更远', style: TextStyle(color: Colors.black54)),
+              const SizedBox(height: 14),
+              Card(
+                color: snapshot.isDeviceSynced ? moveaMint : moveaLavender,
+                child: ListTile(
+                  leading: Icon(
+                    snapshot.isDeviceSynced
+                        ? Icons.cloud_done_outlined
+                        : Icons.sync_problem_outlined,
+                    color: snapshot.isDeviceSynced
+                        ? const Color(0xFF2EAF72)
+                        : moveaBlue,
+                  ),
+                  title: Row(
+                    children: [
+                      const Text('健康数据中心',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 8),
+                      _HealthSourcePill(source: snapshot.source),
+                    ],
+                  ),
+                  subtitle: Text(
+                    store.isLoading
+                        ? '正在读取健康数据…'
+                        : snapshot.isDeviceSynced
+                            ? '已从 ${snapshot.sourceLabel} 读取设备数据'
+                            : '当前为演示数据；连接设备后才会展示真实健康指标',
+                  ),
+                  trailing: IconButton(
+                    onPressed: store.isLoading ? null : store.refresh,
+                    tooltip: '刷新健康数据',
+                    icon: const Icon(Icons.refresh),
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          const MoveaSectionTitle('身体指标', action: '最近同步'),
-          const SizedBox(height: 10),
-          Row(children: [
-            Expanded(
-              child: _HealthMetricCard(
-                  title: '当前体重',
-                  value: '${snapshot.weightKg} kg',
-                  note: '较上周 -0.6 kg'),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _HealthMetricCard(
-                  title: '静息心率',
-                  value: '${snapshot.restingHeartRate} bpm',
-                  note: '过去 7 天稳定'),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _HealthMetricCard(
-                  title: '今日步数', value: '${snapshot.steps}', note: '目标 10,000'),
-            ),
-          ]),
-          const SizedBox(height: 18),
-          const MoveaSectionTitle('近 7 天睡眠时长', action: '平均 7h 12m'),
-          const SizedBox(height: 10),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 18, 14, 12),
-              child: SizedBox(
-                height: 160,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    for (final item in const [
-                      ('一', 62.0),
-                      ('二', 78.0),
-                      ('三', 92.0),
-                      ('四', 70.0),
-                      ('五', 84.0),
-                      ('六', 90.0),
-                      ('日', 100.0),
-                    ])
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Container(
-                              width: 25,
-                              height: item.$2,
-                              decoration: BoxDecoration(
-                                  color: item.$1 == '日' ? moveaBlue : moveaMint,
-                                  borderRadius: BorderRadius.circular(8))),
-                          const SizedBox(height: 5),
-                          Text(item.$1,
-                              style: const TextStyle(
-                                  fontSize: 11, color: Colors.black54)),
-                        ],
-                      ),
-                  ],
+              const SizedBox(height: 14),
+              InkWell(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SleepDetailPage(summary: sleep))),
+                borderRadius: BorderRadius.circular(20),
+                child: Card(
+                  color: moveaMint,
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          const Text('昨晚睡眠',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                          Text('${sleep.bedtime} → ${sleep.wakeTime}',
+                              style: const TextStyle(color: Colors.black54)),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.chevron_right, size: 18),
+                        ]),
+                        const SizedBox(height: 8),
+                        Text(formatHoursMinutes(sleep.duration),
+                            style: const TextStyle(
+                                fontSize: 42,
+                                fontWeight: FontWeight.w800,
+                                color: moveaInk)),
+                        Text(
+                            '睡眠质量：${sleep.quality} · 清醒 ${sleep.awakeMinutes} 分钟',
+                            style: const TextStyle(color: Colors.black54)),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(height: 14),
+              const MoveaSectionTitle('身体指标', action: '最近同步'),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  child: _HealthMetricCard(
+                      title: '当前体重',
+                      value: '${snapshot.weightKg} kg',
+                      note: '较上周 -0.6 kg'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _HealthMetricCard(
+                      title: '静息心率',
+                      value: '${snapshot.restingHeartRate} bpm',
+                      note: '过去 7 天稳定'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _HealthMetricCard(
+                      title: '今日步数',
+                      value: '${snapshot.steps}',
+                      note: '目标 10,000'),
+                ),
+              ]),
+              const SizedBox(height: 18),
+              const MoveaSectionTitle('近 7 天睡眠时长', action: '平均 7h 12m'),
+              const SizedBox(height: 10),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 18, 14, 12),
+                  child: SizedBox(
+                    height: 160,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        for (final item in const [
+                          ('一', 62.0),
+                          ('二', 78.0),
+                          ('三', 92.0),
+                          ('四', 70.0),
+                          ('五', 84.0),
+                          ('六', 90.0),
+                          ('日', 100.0),
+                        ])
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Container(
+                                  width: 25,
+                                  height: item.$2,
+                                  decoration: BoxDecoration(
+                                      color: item.$1 == '日'
+                                          ? moveaBlue
+                                          : moveaMint,
+                                      borderRadius: BorderRadius.circular(8))),
+                              const SizedBox(height: 5),
+                              Text(item.$1,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.black54)),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Card(
+                color: moveaLemon,
+                child: ListTile(
+                  leading:
+                      Icon(Icons.tips_and_updates_outlined, color: moveaCoral),
+                  title: Text('今天的恢复提示',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('昨晚深度睡眠 1h 18m，今天适合保持轻到中等强度。'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
-          const Card(
-            color: moveaLemon,
-            child: ListTile(
-              leading: Icon(Icons.tips_and_updates_outlined, color: moveaCoral),
-              title: Text('今天的恢复提示',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('昨晚深度睡眠 1h 18m，今天适合保持轻到中等强度。'),
-            ),
-          ),
-        ],
+        );
+      },
+    );
+  }
+}
+
+class _HealthSourcePill extends StatelessWidget {
+  const _HealthSourcePill({required this.source});
+
+  final HealthDataSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDemo = source == HealthDataSource.demo;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDemo
+            ? Colors.white
+            : const Color(0xFF2EAF72).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        source.label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: isDemo ? Colors.black54 : const Color(0xFF2EAF72),
+        ),
       ),
     );
   }

@@ -486,7 +486,40 @@ class TrainingPlanStore extends ChangeNotifier {
 }
 
 abstract interface class HealthRepository {
-  Future<SleepSummary> readSleep();
+  Future<HealthSnapshot> readSnapshot();
+}
+
+/// Owns health loading state so every surface can render the same source
+/// status. A repository may later be backed by HealthKit, Health Connect, or
+/// local manual entries without changing the screens.
+class HealthStore extends ChangeNotifier {
+  HealthStore({required HealthRepository repository})
+    : _repository = repository;
+
+  final HealthRepository _repository;
+  HealthSnapshot _snapshot = HealthSnapshot.demo;
+  bool _isLoading = true;
+  Object? _error;
+
+  HealthSnapshot get snapshot => _snapshot;
+  bool get isLoading => _isLoading;
+  Object? get error => _error;
+
+  Future<void> restore() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _snapshot = await _repository.readSnapshot();
+    } on Object catch (error) {
+      _error = error;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refresh() => restore();
 }
 
 abstract interface class LocationRepository {

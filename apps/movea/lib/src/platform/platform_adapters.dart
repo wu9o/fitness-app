@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:movea_data/movea_data.dart';
 import 'package:movea_domain/movea_domain.dart';
@@ -8,8 +9,90 @@ import 'package:movea_domain/movea_domain.dart';
 /// Apple Watch uses a separate watchOS target and Watch Connectivity bridge.
 class UnsupportedHealthRepository implements HealthRepository {
   @override
-  Future<SleepSummary> readSleep() async => const SleepSummary(
-      duration: Duration(hours: 7, minutes: 32), quality: '不错');
+  Future<HealthSnapshot> readSnapshot() async => HealthSnapshot.demo;
+}
+
+/// Health bridge used by Apple platforms today and Health Connect later on
+/// Android. The UI only consumes the shared [HealthSnapshot] model; a missing
+/// native bridge remains an explicit demo state instead of silently mixing
+/// placeholder values with device data.
+class PlatformHealthRepository implements HealthRepository {
+  static const _channel = MethodChannel('movea/health');
+
+  @override
+  Future<HealthSnapshot> readSnapshot() async {
+    try {
+      final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'readHealthSnapshot',
+      );
+      if (raw == null) return HealthSnapshot.demo;
+      return _decodeSnapshot(Map<String, dynamic>.from(raw));
+    } on MissingPluginException {
+      return HealthSnapshot.demo;
+    } on PlatformException catch (error) {
+      // Authorization is intentionally non-fatal during this phase. The
+      // health screen will keep showing a clearly labelled demo state until
+      // the user grants access in the system dialog.
+      if (error.code == 'unavailable' || error.code == 'authorizationDenied') {
+        return HealthSnapshot.demo;
+      }
+      rethrow;
+    }
+  }
+
+  static HealthSnapshot _decodeSnapshot(Map<String, dynamic> json) {
+    final source = switch (json['source'] as String?) {
+      'healthKit' => HealthDataSource.healthKit,
+      'healthConnect' => HealthDataSource.healthConnect,
+      'manual' => HealthDataSource.manual,
+      _ => HealthDataSource.demo,
+    };
+    final sleepJson = json['sleep'] is Map
+        ? Map<String, dynamic>.from(json['sleep'] as Map)
+        : const <String, dynamic>{};
+    final segments = (sleepJson['segments'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((value) => SleepSegment(
+              startMinute: (value['startMinute'] as num?)?.toInt() ?? 0,
+              endMinute: (value['endMinute'] as num?)?.toInt() ?? 0,
+              stage: _decodeSleepStage(value['stage'] as String?),
+            ))
+        .where((segment) => segment.endMinute > segment.startMinute)
+        .toList(growable: false);
+    return HealthSnapshot(
+      sleep: SleepSummary(
+        duration: Duration(
+          minutes: (sleepJson['durationMinutes'] as num?)?.toInt() ?? 0,
+        ),
+        quality: sleepJson['quality'] as String? ?? '暂无数据',
+        bedtime: sleepJson['bedtime'] as String? ?? '--:--',
+        wakeTime: sleepJson['wakeTime'] as String? ?? '--:--',
+        awakeMinutes: (sleepJson['awakeMinutes'] as num?)?.toInt() ?? 0,
+        deepMinutes: (sleepJson['deepMinutes'] as num?)?.toInt() ?? 0,
+        remMinutes: (sleepJson['remMinutes'] as num?)?.toInt() ?? 0,
+        segments: segments,
+      ),
+      weightKg: (json['weightKg'] as num?)?.toDouble() ?? 0,
+      weightChangeKg: (json['weightChangeKg'] as num?)?.toDouble() ?? 0,
+      restingHeartRate: (json['restingHeartRate'] as num?)?.toInt() ?? 0,
+      steps: (json['steps'] as num?)?.toInt() ?? 0,
+      source: source,
+      lastSyncedAt: DateTime.tryParse(json['lastSyncedAt'] as String? ?? ''),
+    );
+  }
+
+  static SleepStage _decodeSleepStage(String? value) {
+    switch (value) {
+      case 'awake':
+        return SleepStage.awake;
+      case 'rem':
+        return SleepStage.rem;
+      case 'deep':
+        return SleepStage.deep;
+      default:
+        return SleepStage.core;
+    }
+  }
 }
 
 class UnsupportedLocationRepository implements LocationRepository {

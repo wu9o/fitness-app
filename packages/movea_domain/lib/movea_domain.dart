@@ -219,6 +219,25 @@ class SleepSummary {
   final List<SleepSegment> segments;
 }
 
+/// Where a health snapshot came from. Keeping this in the shared domain model
+/// prevents the UI from presenting demo values as if they were device data.
+enum HealthDataSource { demo, healthKit, healthConnect, manual }
+
+extension HealthDataSourceLabel on HealthDataSource {
+  String get label {
+    switch (this) {
+      case HealthDataSource.demo:
+        return '演示数据';
+      case HealthDataSource.healthKit:
+        return 'HealthKit';
+      case HealthDataSource.healthConnect:
+        return 'Health Connect';
+      case HealthDataSource.manual:
+        return '手动记录';
+    }
+  }
+}
+
 class HealthSnapshot {
   const HealthSnapshot({
     required this.sleep,
@@ -226,6 +245,8 @@ class HealthSnapshot {
     required this.weightChangeKg,
     required this.restingHeartRate,
     required this.steps,
+    this.source = HealthDataSource.demo,
+    this.lastSyncedAt,
   });
 
   final SleepSummary sleep;
@@ -233,6 +254,14 @@ class HealthSnapshot {
   final double weightChangeKg;
   final int restingHeartRate;
   final int steps;
+  final HealthDataSource source;
+  final DateTime? lastSyncedAt;
+
+  bool get isDeviceSynced =>
+      source == HealthDataSource.healthKit ||
+      source == HealthDataSource.healthConnect;
+
+  String get sourceLabel => source.label;
 
   static const demo = HealthSnapshot(
     sleep: SleepSummary(

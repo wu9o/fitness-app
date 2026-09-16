@@ -71,6 +71,11 @@ GitHub 私密仓库是备份目标，不是在线数据库。客户端需要：
 作为离线优先的第一步；训练计划和带路线点的路线摘要使用各自的 SharedPreferences 持久化，
 睡眠原始数据和加密 GitHub 备份仍沿用接口逐步接入。
 
+健康概览由 `HealthStore` 统一承载加载、刷新和来源状态。iOS 通过 `movea/health` MethodChannel
+读取 HealthKit 的睡眠、体重、步数和静息心率，并先转换为 `HealthSnapshot`；HealthKit 不可用、
+用户未授权或其他平台尚未接入时返回带 `HealthDataSource.demo` 的明确降级快照。这样首页和健康页
+不会各自写死一套健康数字，也为 Android Health Connect 复用同一接口。
+
 前台户外定位由 `GeolocatorLocationRepository` 负责权限、定位服务检查、5 米采样间隔和
 低精度点过滤；`ActivityPage` 负责运动生命周期、暂停/继续、距离累计和计划路线引导。
 当前配速优先使用平台提供的速度；若平台速度未知，则由最近一组带时间戳的 GPS 点按距离/时间

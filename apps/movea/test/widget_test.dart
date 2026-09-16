@@ -8,6 +8,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:movea/src/exercise_catalog.dart';
 
+class _FakeHealthRepository implements HealthRepository {
+  @override
+  Future<HealthSnapshot> readSnapshot() async {
+    const demo = HealthSnapshot.demo;
+    return HealthSnapshot(
+      sleep: demo.sleep,
+      weightKg: demo.weightKg,
+      weightChangeKg: demo.weightChangeKg,
+      restingHeartRate: demo.restingHeartRate,
+      steps: demo.steps,
+      source: HealthDataSource.healthKit,
+      lastSyncedAt: null,
+    );
+  }
+}
+
 Future<void> pumpMobile(WidgetTester tester) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(390, 844);
@@ -109,6 +125,17 @@ void main() {
     expect(find.text('睡眠阶段'), findsOneWidget);
     expect(find.text('深度睡眠 78 分钟'), findsOneWidget);
     expect(find.text('快速眼动 102 分钟'), findsOneWidget);
+  });
+
+  test('HealthStore preserves the source of a health snapshot', () async {
+    final store = HealthStore(repository: _FakeHealthRepository());
+
+    await store.restore();
+
+    expect(store.error, isNull);
+    expect(store.isLoading, isFalse);
+    expect(store.snapshot.source, HealthDataSource.healthKit);
+    expect(store.snapshot.sourceLabel, 'HealthKit');
   });
 
   testWidgets('Movea sports hub opens calendar and weekly report',
