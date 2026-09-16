@@ -17,6 +17,18 @@ bool get _isFlutterTest => WidgetsBinding.instance.runtimeType
     .toString()
     .contains('TestWidgetsFlutterBinding');
 
+class TrainingProfileScope extends InheritedNotifier<TrainingProfileStore> {
+  const TrainingProfileScope({
+    required TrainingProfileStore notifier,
+    required super.child,
+    super.key,
+  }) : super(notifier: notifier);
+
+  static TrainingProfileStore? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<TrainingProfileScope>()
+      ?.notifier;
+}
+
 class ActivitySessionSnapshot {
   const ActivitySessionSnapshot({
     required this.activity,
@@ -2521,10 +2533,160 @@ class _DayDot extends StatelessWidget {
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({this.profileStore, super.key});
+
+  final TrainingProfileStore? profileStore;
+
+  Future<void> _editMaximumHeartRate(
+    BuildContext context,
+    TrainingProfileStore store,
+  ) async {
+    var inputValue = store.profile.maximumHeartRateBpm?.toString() ?? '';
+    String? errorText;
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('设置最大心率'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('请输入你通过设备、运动测试或专业评估获得的最大心率。'),
+              const SizedBox(height: 14),
+              TextFormField(
+                key: const ValueKey('maximum-heart-rate-input'),
+                initialValue: inputValue,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: (value) => inputValue = value,
+                decoration: InputDecoration(
+                  labelText: '最大心率',
+                  suffixText: 'bpm',
+                  hintText: '例如 190',
+                  errorText: errorText,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text('可设置范围：100–240 bpm',
+                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+            ],
+          ),
+          actions: [
+            if (store.profile.maximumHeartRateBpm != null)
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, -1),
+                child: const Text('清除'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = int.tryParse(inputValue);
+                if (value == null || value < 100 || value > 240) {
+                  setDialogState(() => errorText = '请输入 100–240 之间的整数');
+                  return;
+                }
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    await store.setMaximumHeartRate(result == -1 ? null : result);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result == -1 ? '已恢复固定心率分段' : '个性化心率区间已更新')),
+    );
+  }
+
+  Widget _trainingProfileCard(
+    BuildContext context,
+    TrainingProfileStore store,
+  ) {
+    final maximum = store.profile.maximumHeartRateBpm;
+    final zones = maximum == null
+        ? const <HeartRateZoneDefinition>[]
+        : heartRateZonesForMaximum(maximum);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(
+                  backgroundColor: Color(0xFFFFE8E2),
+                  child: Icon(Icons.favorite_outline, color: moveaCoral),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('最大心率',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                      Text(
+                        maximum == null
+                            ? '未设置 · 使用固定 bpm 分段'
+                            : '$maximum bpm · 个性化 5 区',
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  key: const ValueKey('maximum-heart-rate-edit'),
+                  onPressed: () => _editMaximumHeartRate(context, store),
+                  child: Text(maximum == null ? '设置' : '修改'),
+                ),
+              ],
+            ),
+            if (zones.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              for (final definition in zones)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 7),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _heartRateZoneColor(definition.zone),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(child: Text(definition.zone.label)),
+                      Text('${definition.rangeLabel} bpm',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 3),
+              const Text(
+                '区间按最大心率百分比分为 <60%、60–69%、70–79%、80–89% 和 ≥90%。',
+                style: TextStyle(fontSize: 11, color: Colors.black45),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final store = profileStore ?? TrainingProfileScope.maybeOf(context);
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: MoveaContentFrame(
@@ -2532,6 +2694,28 @@ class SettingsPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
+            const Text('训练参数',
+                style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: moveaInk)),
+            const SizedBox(height: 6),
+            const Text('这些参数只保存在你的设备上，用于解释真实运动数据。',
+                style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 14),
+            if (store != null)
+              AnimatedBuilder(
+                animation: store,
+                builder: (context, _) => _trainingProfileCard(context, store),
+              )
+            else
+              const Card(
+                child: ListTile(
+                  title: Text('最大心率'),
+                  subtitle: Text('当前预览未连接训练参数存储'),
+                ),
+              ),
+            const SizedBox(height: 24),
             const Text('地图服务',
                 style: TextStyle(
                     fontSize: 24,
@@ -5492,7 +5676,12 @@ class WorkoutDetailPage extends StatelessWidget {
             ),
             if (record.heartRateSamples.length > 1) ...[
               const SizedBox(height: 18),
-              _HeartRateAnalysisCard(record: record),
+              _HeartRateAnalysisCard(
+                record: record,
+                maximumHeartRateBpm: TrainingProfileScope.maybeOf(context)
+                    ?.profile
+                    .maximumHeartRateBpm,
+              ),
             ],
             const SizedBox(height: 18),
             _WorkoutFeedbackCard(
@@ -5928,21 +6117,24 @@ class _SaveRouteDialogState extends State<_SaveRouteDialog> {
 }
 
 class _HeartRateAnalysisCard extends StatelessWidget {
-  const _HeartRateAnalysisCard({required this.record});
+  const _HeartRateAnalysisCard({
+    required this.record,
+    this.maximumHeartRateBpm,
+  });
 
   final WorkoutRecord record;
-
-  String formatBandDuration(Duration value) {
-    final minutes = value.inMinutes;
-    final seconds = value.inSeconds.remainder(60);
-    return minutes > 0
-        ? '$minutes:${seconds.toString().padLeft(2, '0')}'
-        : '${seconds}s';
-  }
+  final int? maximumHeartRateBpm;
 
   @override
   Widget build(BuildContext context) {
     final bands = record.heartRateBandDurations;
+    final maximumHeartRate = maximumHeartRateBpm;
+    final zones = maximumHeartRate == null
+        ? const <HeartRateZone, Duration>{}
+        : record.heartRateZoneDurations(maximumHeartRate);
+    final zoneDefinitions = maximumHeartRate == null
+        ? const <HeartRateZoneDefinition>[]
+        : heartRateZonesForMaximum(maximumHeartRate);
     final observedSeconds =
         math.max(1, record.heartRateObservedDuration.inSeconds);
     final bpmValues = record.heartRateSamples.map((sample) => sample.bpm);
@@ -5997,52 +6189,38 @@ class _HeartRateAnalysisCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                for (final band in HeartRateBand.values)
-                  if ((bands[band] ?? Duration.zero) > Duration.zero)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 9),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 50,
-                            child: Text(band.label,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700)),
-                          ),
-                          SizedBox(
-                            width: 60,
-                            child: Text(band.rangeLabel,
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.black54)),
-                          ),
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: LinearProgressIndicator(
-                                minHeight: 8,
-                                value:
-                                    (bands[band]!.inSeconds / observedSeconds)
-                                        .clamp(0, 1),
-                                backgroundColor: Colors.black12,
-                                color: _heartRateBandColor(band),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 42,
-                            child: Text(formatBandDuration(bands[band]!),
-                                textAlign: TextAlign.end,
-                                style: const TextStyle(fontSize: 12)),
-                          ),
-                        ],
+                if (maximumHeartRate != null) ...[
+                  for (final definition in zoneDefinitions)
+                    if ((zones[definition.zone] ?? Duration.zero) >
+                        Duration.zero)
+                      _HeartRateDistributionRow(
+                        label: definition.zone.label,
+                        rangeLabel: definition.rangeLabel,
+                        duration: zones[definition.zone]!,
+                        observedSeconds: observedSeconds,
+                        color: _heartRateZoneColor(definition.zone),
+                      )
+                ] else ...[
+                  for (final band in HeartRateBand.values)
+                    if ((bands[band] ?? Duration.zero) > Duration.zero)
+                      _HeartRateDistributionRow(
+                        label: band.label,
+                        rangeLabel: band.rangeLabel,
+                        duration: bands[band]!,
+                        observedSeconds: observedSeconds,
+                        color: _heartRateBandColor(band),
                       ),
-                    ),
+                ],
                 const SizedBox(height: 3),
-                const Text(
-                  '区间采用固定 bpm 分段，仅用于查看本次采样分布，不代表个体化心率区或医疗建议；超过 30 秒的采样空档不会补算。',
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.black45, height: 1.4),
+                Text(
+                  maximumHeartRate == null
+                      ? '当前采用固定 bpm 分段。可在设置中填写最大心率，升级为个性化 5 区；超过 30 秒的采样空档不会补算。'
+                      : '个性化 5 区基于你设置的最大心率 $maximumHeartRate bpm，仅用于训练回顾，不构成医疗建议；超过 30 秒的采样空档不会补算。',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.black45,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),
@@ -6050,6 +6228,80 @@ class _HeartRateAnalysisCard extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _HeartRateDistributionRow extends StatelessWidget {
+  const _HeartRateDistributionRow({
+    required this.label,
+    required this.rangeLabel,
+    required this.duration,
+    required this.observedSeconds,
+    required this.color,
+  });
+
+  final String label;
+  final String rangeLabel;
+  final Duration duration;
+  final int observedSeconds;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds.remainder(60);
+    final durationLabel = minutes > 0
+        ? '$minutes:${seconds.toString().padLeft(2, '0')}'
+        : '${seconds}s';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 50,
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          SizedBox(
+            width: 60,
+            child: Text(rangeLabel,
+                style: const TextStyle(fontSize: 11, color: Colors.black54)),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: (duration.inSeconds / observedSeconds).clamp(0, 1),
+                backgroundColor: Colors.black12,
+                color: color,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 42,
+            child: Text(durationLabel,
+                textAlign: TextAlign.end, style: const TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Color _heartRateZoneColor(HeartRateZone zone) {
+  switch (zone) {
+    case HeartRateZone.recovery:
+      return const Color(0xFF98C9BD);
+    case HeartRateZone.easy:
+      return const Color(0xFF5BB6A3);
+    case HeartRateZone.aerobic:
+      return moveaBlue;
+    case HeartRateZone.threshold:
+      return const Color(0xFFF0B94C);
+    case HeartRateZone.high:
+      return moveaCoral;
   }
 }
 

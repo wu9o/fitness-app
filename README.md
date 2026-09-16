@@ -97,9 +97,9 @@ fitness-app/
 ## 当前状态
 
 - SwiftUI 原型：可运行，用于保留已确认的视觉和交互参考
-- Flutter 主应用：已具备 MapLibre/OpenFreeMap 地图、可折叠运动控制、本地运动记录、运动结束总结、GPS 采样质量、HealthKit 设备运动与心率曲线导入、记录来源筛选、28 天负荷趋势、睡眠详情、训练计划模板和路线保存/跟随流程
+- Flutter 主应用：已具备 MapLibre/OpenFreeMap 地图、可折叠运动控制、本地运动记录、运动结束总结、GPS 采样质量、HealthKit 设备运动与心率曲线导入、个性化心率 5 区、记录来源筛选、28 天负荷趋势、睡眠详情、训练计划模板和路线保存/跟随流程
 - 健身动作库：已导入动作元数据和 SVG 演示帧；训练计划可从动作库选动作，计划详情和训练中都可打开动作演示
-- 下一阶段路线图：见 [`docs/roadmap.md`](docs/roadmap.md)，继续补充心率区间、Apple Watch 真机来源验证和 GPS 稳定性验证，再推进多设备同步
+- 下一阶段路线图：见 [`docs/roadmap.md`](docs/roadmap.md)，继续补充 Apple Watch 真机来源验证、路线触觉提示和 GPS 稳定性验证，再推进多设备同步
 - Apple Watch：架构和数据协议设计中
 - GitHub 加密同步：已有概念验证，尚未作为正式数据层发布
 

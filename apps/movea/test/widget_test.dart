@@ -263,6 +263,29 @@ void main() {
     expect(find.text('无需 Key；地图样式和路线叠加由 Movea 自己控制'), findsOneWidget);
   });
 
+  testWidgets('Settings save and preview personalized heart rate zones',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = TrainingProfileStore();
+    await store.restore();
+    await tester.pumpWidget(
+      MaterialApp(home: SettingsPage(profileStore: store)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('maximum-heart-rate-edit')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('maximum-heart-rate-input')), '190');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(store.profile.maximumHeartRateBpm, 190);
+    expect(find.text('190 bpm · 个性化 5 区'), findsOneWidget);
+    expect(find.text('114–132 bpm'), findsOneWidget);
+    expect(find.text('≥ 171 bpm'), findsOneWidget);
+  });
+
   testWidgets('Movea activity flow supports type, pause, finish and history',
       (tester) async {
     await pumpMobile(tester);
@@ -634,6 +657,51 @@ void main() {
     expect(record.heartRateObservedDuration, const Duration(seconds: 75));
   });
 
+  test('Maximum heart rate produces personalized five-zone durations', () {
+    final definitions = heartRateZonesForMaximum(190);
+    expect(definitions.map((item) => item.rangeLabel),
+        ['< 114', '114–132', '133–151', '152–170', '≥ 171']);
+
+    final record = WorkoutRecord(
+      id: 'personalized-heart-rate-zones',
+      activity: ActivityType.run,
+      startedAt: DateTime(2026, 9, 16),
+      duration: const Duration(minutes: 5),
+      distanceMeters: 1000,
+      heartRateSamples: const [
+        HeartRateSample(offset: Duration.zero, bpm: 105),
+        HeartRateSample(offset: Duration(seconds: 10), bpm: 120),
+        HeartRateSample(offset: Duration(seconds: 25), bpm: 140),
+        HeartRateSample(offset: Duration(minutes: 2), bpm: 160),
+        HeartRateSample(offset: Duration(minutes: 2, seconds: 20), bpm: 180),
+        HeartRateSample(offset: Duration(minutes: 2, seconds: 30), bpm: 150),
+      ],
+    );
+
+    final zones = record.heartRateZoneDurations(190);
+    expect(zones[HeartRateZone.recovery], const Duration(seconds: 10));
+    expect(zones[HeartRateZone.easy], const Duration(seconds: 15));
+    expect(zones[HeartRateZone.aerobic], const Duration(seconds: 30));
+    expect(zones[HeartRateZone.threshold], const Duration(seconds: 20));
+    expect(zones[HeartRateZone.high], const Duration(seconds: 10));
+  });
+
+  test('Training profile maximum heart rate persists locally', () async {
+    SharedPreferences.setMockInitialValues({});
+    final original = TrainingProfileStore();
+    await original.restore();
+    await original.setMaximumHeartRate(190);
+
+    final restored = TrainingProfileStore();
+    await restored.restore();
+    expect(restored.profile.maximumHeartRateBpm, 190);
+
+    await restored.setMaximumHeartRate(null);
+    final cleared = TrainingProfileStore();
+    await cleared.restore();
+    expect(cleared.profile.maximumHeartRateBpm, isNull);
+  });
+
   test('ActiveWorkoutStore restores an unfinished GPS workout', () async {
     SharedPreferences.setMockInitialValues({});
     final persistence = SharedPreferencesActiveWorkoutPersistence();
@@ -936,6 +1004,47 @@ void main() {
     expect(find.text('5 个 HealthKit 采样点'), findsOneWidget);
     expect(find.text('轻松'), findsOneWidget);
     expect(find.text('高强'), findsOneWidget);
+  });
+
+  testWidgets('Workout detail uses configured personalized heart rate zones',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profileStore = TrainingProfileStore();
+    await profileStore.restore();
+    await profileStore.setMaximumHeartRate(190);
+    final record = WorkoutRecord(
+      id: 'personalized-heart-rate-detail',
+      activity: ActivityType.run,
+      startedAt: DateTime(2026, 9, 16, 8),
+      duration: const Duration(minutes: 30),
+      distanceMeters: 5000,
+      dataSource: WorkoutDataSource.healthKit,
+      heartRateSamples: const [
+        HeartRateSample(offset: Duration.zero, bpm: 105),
+        HeartRateSample(offset: Duration(seconds: 10), bpm: 120),
+        HeartRateSample(offset: Duration(seconds: 20), bpm: 140),
+        HeartRateSample(offset: Duration(seconds: 30), bpm: 160),
+        HeartRateSample(offset: Duration(seconds: 40), bpm: 180),
+        HeartRateSample(offset: Duration(seconds: 50), bpm: 150),
+      ],
+    );
+
+    await tester.pumpWidget(
+      TrainingProfileScope(
+        notifier: profileStore,
+        child: MaterialApp(home: WorkoutDetailPage(record: record)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('设备心率曲线'),
+      320,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('恢复'), findsOneWidget);
+    expect(find.text('阈值'), findsOneWidget);
+    expect(find.textContaining('最大心率 190 bpm'), findsOneWidget);
   });
 
   testWidgets('Workout feedback persists subjective training load',

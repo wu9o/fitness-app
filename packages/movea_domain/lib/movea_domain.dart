@@ -8,6 +8,106 @@ enum WorkoutDataSource { localGps, healthKit, healthConnect, manual }
 
 enum HeartRateBand { easy, aerobic, tempo, high }
 
+enum HeartRateZone { recovery, easy, aerobic, threshold, high }
+
+extension HeartRateZoneLabel on HeartRateZone {
+  String get label {
+    switch (this) {
+      case HeartRateZone.recovery:
+        return '恢复';
+      case HeartRateZone.easy:
+        return '轻松';
+      case HeartRateZone.aerobic:
+        return '有氧';
+      case HeartRateZone.threshold:
+        return '阈值';
+      case HeartRateZone.high:
+        return '高强';
+    }
+  }
+}
+
+class HeartRateZoneDefinition {
+  const HeartRateZoneDefinition({
+    required this.zone,
+    required this.lowerInclusiveBpm,
+    this.upperExclusiveBpm,
+  });
+
+  final HeartRateZone zone;
+  final int lowerInclusiveBpm;
+  final int? upperExclusiveBpm;
+
+  bool contains(double bpm) =>
+      bpm >= lowerInclusiveBpm &&
+      (upperExclusiveBpm == null || bpm < upperExclusiveBpm!);
+
+  String get rangeLabel {
+    final upper = upperExclusiveBpm;
+    if (lowerInclusiveBpm <= 0 && upper != null) return '< $upper';
+    if (upper == null) return '≥ $lowerInclusiveBpm';
+    return '$lowerInclusiveBpm–${upper - 1}';
+  }
+}
+
+List<HeartRateZoneDefinition> heartRateZonesForMaximum(
+  int maximumHeartRateBpm,
+) {
+  if (maximumHeartRateBpm < 100 || maximumHeartRateBpm > 240) {
+    throw ArgumentError.value(
+      maximumHeartRateBpm,
+      'maximumHeartRateBpm',
+      'must be between 100 and 240',
+    );
+  }
+  final zone2 = (maximumHeartRateBpm * .60).ceil();
+  final zone3 = (maximumHeartRateBpm * .70).ceil();
+  final zone4 = (maximumHeartRateBpm * .80).ceil();
+  final zone5 = (maximumHeartRateBpm * .90).ceil();
+  return [
+    HeartRateZoneDefinition(
+      zone: HeartRateZone.recovery,
+      lowerInclusiveBpm: 0,
+      upperExclusiveBpm: zone2,
+    ),
+    HeartRateZoneDefinition(
+      zone: HeartRateZone.easy,
+      lowerInclusiveBpm: zone2,
+      upperExclusiveBpm: zone3,
+    ),
+    HeartRateZoneDefinition(
+      zone: HeartRateZone.aerobic,
+      lowerInclusiveBpm: zone3,
+      upperExclusiveBpm: zone4,
+    ),
+    HeartRateZoneDefinition(
+      zone: HeartRateZone.threshold,
+      lowerInclusiveBpm: zone4,
+      upperExclusiveBpm: zone5,
+    ),
+    HeartRateZoneDefinition(zone: HeartRateZone.high, lowerInclusiveBpm: zone5),
+  ];
+}
+
+class TrainingProfile {
+  const TrainingProfile({this.maximumHeartRateBpm});
+
+  final int? maximumHeartRateBpm;
+
+  bool get hasPersonalizedHeartRateZones => maximumHeartRateBpm != null;
+
+  TrainingProfile copyWith({
+    int? maximumHeartRateBpm,
+    bool clearMaximum = false,
+  }) {
+    return TrainingProfile(
+      maximumHeartRateBpm: clearMaximum
+          ? null
+          : maximumHeartRateBpm ?? this.maximumHeartRateBpm,
+    );
+  }
+}
+
 extension HeartRateBandLabel on HeartRateBand {
   String get label {
     switch (this) {
@@ -199,6 +299,28 @@ class WorkoutRecord {
     Duration.zero,
     (total, value) => total + value,
   );
+
+  Map<HeartRateZone, Duration> heartRateZoneDurations(int maximumHeartRateBpm) {
+    final definitions = heartRateZonesForMaximum(maximumHeartRateBpm);
+    final durations = {
+      for (final zone in HeartRateZone.values) zone: Duration.zero,
+    };
+    if (heartRateSamples.length < 2) return durations;
+    for (var index = 0; index < heartRateSamples.length - 1; index++) {
+      final sample = heartRateSamples[index];
+      final next = heartRateSamples[index + 1];
+      final rawMilliseconds =
+          next.offset.inMilliseconds - sample.offset.inMilliseconds;
+      if (rawMilliseconds <= 0) continue;
+      final milliseconds = math.min(rawMilliseconds, 30000);
+      final definition = definitions.firstWhere(
+        (item) => item.contains(sample.bpm),
+      );
+      durations[definition.zone] =
+          durations[definition.zone]! + Duration(milliseconds: milliseconds);
+    }
+    return durations;
+  }
 
   double get planCompletion {
     if (plannedActions <= 0) return 0;

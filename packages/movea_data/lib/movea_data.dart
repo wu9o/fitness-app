@@ -251,6 +251,69 @@ class WorkoutStore extends ChangeNotifier {
   }
 }
 
+abstract interface class TrainingProfilePersistence {
+  Future<TrainingProfile> read();
+  Future<void> write(TrainingProfile profile);
+}
+
+class SharedPreferencesTrainingProfilePersistence
+    implements TrainingProfilePersistence {
+  static const storageKey = 'movea.training_profile.v1';
+
+  @override
+  Future<TrainingProfile> read() async {
+    final preferences = await SharedPreferences.getInstance();
+    final maximum = preferences.getInt(storageKey);
+    if (maximum == null || maximum < 100 || maximum > 240) {
+      return const TrainingProfile();
+    }
+    return TrainingProfile(maximumHeartRateBpm: maximum);
+  }
+
+  @override
+  Future<void> write(TrainingProfile profile) async {
+    final preferences = await SharedPreferences.getInstance();
+    final maximum = profile.maximumHeartRateBpm;
+    if (maximum == null) {
+      await preferences.remove(storageKey);
+    } else {
+      await preferences.setInt(storageKey, maximum);
+    }
+  }
+}
+
+class TrainingProfileStore extends ChangeNotifier {
+  TrainingProfileStore({TrainingProfilePersistence? persistence})
+    : _persistence =
+          persistence ?? SharedPreferencesTrainingProfilePersistence();
+
+  final TrainingProfilePersistence _persistence;
+  TrainingProfile _profile = const TrainingProfile();
+  bool _isRestored = false;
+
+  TrainingProfile get profile => _profile;
+  bool get isRestored => _isRestored;
+
+  Future<void> restore() async {
+    if (_isRestored) return;
+    _profile = await _persistence.read();
+    _isRestored = true;
+    notifyListeners();
+  }
+
+  Future<void> setMaximumHeartRate(int? bpm) async {
+    if (bpm != null && (bpm < 100 || bpm > 240)) {
+      throw ArgumentError.value(bpm, 'bpm', 'must be between 100 and 240');
+    }
+    _profile = bpm == null
+        ? _profile.copyWith(clearMaximum: true)
+        : _profile.copyWith(maximumHeartRateBpm: bpm);
+    _isRestored = true;
+    notifyListeners();
+    await _persistence.write(_profile);
+  }
+}
+
 abstract interface class ActiveWorkoutPersistence {
   Future<ActiveWorkoutDraft?> read();
   Future<void> write(ActiveWorkoutDraft draft);
