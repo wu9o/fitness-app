@@ -19,16 +19,20 @@ class MoveaApp extends StatefulWidget {
 
 class _MoveaAppState extends State<MoveaApp> {
   final TrainingProfileStore trainingProfileStore = TrainingProfileStore();
+  final RouteGuidancePreferencesStore routeGuidancePreferencesStore =
+      RouteGuidancePreferencesStore();
 
   @override
   void initState() {
     super.initState();
     unawaited(trainingProfileStore.restore());
+    unawaited(routeGuidancePreferencesStore.restore());
   }
 
   @override
   void dispose() {
     trainingProfileStore.dispose();
+    routeGuidancePreferencesStore.dispose();
     super.dispose();
   }
 
@@ -36,11 +40,14 @@ class _MoveaAppState extends State<MoveaApp> {
   Widget build(BuildContext context) {
     return TrainingProfileScope(
       notifier: trainingProfileStore,
-      child: MaterialApp(
-        title: '动迹 Movea',
-        debugShowCheckedModeBanner: false,
-        theme: moveaTheme(),
-        home: const MoveaShell(),
+      child: RouteGuidancePreferencesScope(
+        notifier: routeGuidancePreferencesStore,
+        child: MaterialApp(
+          title: '动迹 Movea',
+          debugShowCheckedModeBanner: false,
+          theme: moveaTheme(),
+          home: const MoveaShell(),
+        ),
       ),
     );
   }

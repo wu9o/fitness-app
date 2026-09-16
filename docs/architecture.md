@@ -94,6 +94,19 @@ GPS 点还会携带速度、海拔和精度，运动记录从原始点派生平�
 结束运动时使用等待写入完成的持久化路径，写入成功后才清除活动草稿并打开运动总结，防止页面跳转
 早于本地落盘。
 
+`RouteGuidanceCueTracker` 把连续定位结果收敛为一次性事件：同一路段的转向不重复触发，偏航和返回路线
+只在状态变化时提醒，到达终点只提醒一次。Flutter 层根据本地设置调用系统触觉反馈；语音反馈保持为下一阶段，
+避免在未完成平台音频策略前自动播报。
+
+运动主存储之外维护 `WorkoutArchiveCodec` 生成的恢复快照。快照包含 schema 版本、完整记录 payload 和
+SHA-256 校验和；读取到损坏记录时只接受校验通过且能完整解码的快照。修复会经过设置页确认，不会静默
+覆盖唯一数据源。该快照用于本地容灾，不等同于后续加密 GitHub 备份。
+
+Watch 端使用 `HKWorkoutSession` 与 `HKLiveWorkoutBuilder` 采集实时心率、距离和活动能量，结束后先写入
+HealthKit，再通过 `WCSession.transferUserInfo` 排队发送摘要。iPhone 将尚未出现在 HealthKit 查询结果中的
+摘要放入导入列表，并用 HealthKit UUID 去重；HealthKit 完整记录到达后会替代临时摘要。Watch Connectivity
+仍必须在配对真机上验证，模拟器不能作为传输成功证据。
+
 运动强度先采用用户在总结页主动选择的体感等级，记录到 `WorkoutRecord.perceivedEffort`。主观负荷
 使用“有效运动分钟 × 体感分值”形成 Movea 内部趋势分，只用于同一个人的周期比较，不替代心率、
 卡路里或专业训练建议。运动心率和能量仅在 HealthKit 或未来 Health Connect 返回可信来源时展示；

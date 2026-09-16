@@ -498,6 +498,66 @@ class RouteGuidance {
   bool get isOffRoute => distanceToRouteMeters > 80;
 }
 
+enum RouteGuidanceCue { offRoute, backOnRoute, turnLeft, turnRight, arriving }
+
+extension RouteGuidanceCueLabel on RouteGuidanceCue {
+  String get label {
+    switch (this) {
+      case RouteGuidanceCue.offRoute:
+        return '已偏离计划路线';
+      case RouteGuidanceCue.backOnRoute:
+        return '已返回计划路线';
+      case RouteGuidanceCue.turnLeft:
+        return '前方左转';
+      case RouteGuidanceCue.turnRight:
+        return '前方右转';
+      case RouteGuidanceCue.arriving:
+        return '即将到达终点';
+    }
+  }
+}
+
+/// Converts continuous route guidance into one-shot events suitable for
+/// haptics, spoken prompts, and watch notifications.
+class RouteGuidanceCueTracker {
+  bool _wasOffRoute = false;
+  bool _arrivalAnnounced = false;
+  final Set<String> _announcedTurns = {};
+
+  RouteGuidanceCue? update(RouteGuidance guidance) {
+    if (guidance.isOffRoute) {
+      if (_wasOffRoute) return null;
+      _wasOffRoute = true;
+      return RouteGuidanceCue.offRoute;
+    }
+    if (_wasOffRoute) {
+      _wasOffRoute = false;
+      return RouteGuidanceCue.backOnRoute;
+    }
+    if (guidance.maneuver == RouteManeuver.arrive) {
+      if (_arrivalAnnounced) return null;
+      _arrivalAnnounced = true;
+      return RouteGuidanceCue.arriving;
+    }
+    if (guidance.distanceToManeuverMeters > 60) return null;
+    final cue = switch (guidance.maneuver) {
+      RouteManeuver.left => RouteGuidanceCue.turnLeft,
+      RouteManeuver.right => RouteGuidanceCue.turnRight,
+      RouteManeuver.straight || RouteManeuver.arrive => null,
+    };
+    if (cue == null) return null;
+    final key = '${guidance.segmentIndex}:${guidance.maneuver.name}';
+    if (!_announcedTurns.add(key)) return null;
+    return cue;
+  }
+
+  void reset() {
+    _wasOffRoute = false;
+    _arrivalAnnounced = false;
+    _announcedTurns.clear();
+  }
+}
+
 /// Projects [current] onto the closest route segment, then finds the next
 /// meaningful turn. Small bends are treated as a continuous road so sparse GPS
 /// points do not produce noisy left/right instructions.

@@ -1,15 +1,22 @@
 import Flutter
 import HealthKit
 import UIKit
+import WatchConnectivity
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let healthStore = HKHealthStore()
+  private static let watchWorkoutInboxKey = "movea.watch.workoutInbox.v1"
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if WCSession.isSupported() {
+      let session = WCSession.default
+      session.delegate = self
+      session.activate()
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -111,10 +118,33 @@ import UIKit
         encodedWorkouts.sort {
           ($0["startedAt"] as? String ?? "") > ($1["startedAt"] as? String ?? "")
         }
-        result(encodedWorkouts)
+        let healthKitIds = Set(encodedWorkouts.compactMap { $0["sourceWorkoutId"] as? String })
+        let pendingWatchWorkouts = self.readWatchWorkoutInbox().filter {
+          guard let sourceId = $0["sourceWorkoutId"] as? String else { return false }
+          return !healthKitIds.contains(sourceId)
+        }
+        result((encodedWorkouts + pendingWatchWorkouts).sorted {
+          ($0["startedAt"] as? String ?? "") > ($1["startedAt"] as? String ?? "")
+        })
       }
     }
     healthStore.execute(query)
+  }
+
+  private func readWatchWorkoutInbox() -> [[String: Any]] {
+    UserDefaults.standard.array(forKey: Self.watchWorkoutInboxKey) as? [[String: Any]] ?? []
+  }
+
+  private func storeWatchWorkout(_ workout: [String: Any]) {
+    guard workout["kind"] as? String == "movea.workout.v1",
+          let sourceId = workout["sourceWorkoutId"] as? String,
+          workout["startedAt"] as? String != nil
+    else { return }
+    var inbox = readWatchWorkoutInbox()
+    inbox.removeAll { $0["sourceWorkoutId"] as? String == sourceId }
+    inbox.insert(workout, at: 0)
+    if inbox.count > 50 { inbox.removeLast(inbox.count - 50) }
+    UserDefaults.standard.set(inbox, forKey: Self.watchWorkoutInboxKey)
   }
 
   private func readHeartRateSamples(
@@ -417,5 +447,25 @@ import UIKit
       completion(Int(value.rounded()))
     }
     healthStore.execute(query)
+  }
+}
+
+extension AppDelegate: WCSessionDelegate {
+  nonisolated func session(
+    _ session: WCSession,
+    activationDidCompleteWith activationState: WCSessionActivationState,
+    error: Error?
+  ) {}
+
+  nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+
+  nonisolated func sessionDidDeactivate(_ session: WCSession) {
+    session.activate()
+  }
+
+  nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+    Task { @MainActor [weak self] in
+      self?.storeWatchWorkout(userInfo)
+    }
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:movea_domain/movea_domain.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,17 +11,130 @@ abstract interface class WorkoutPersistence {
   Future<void> write(List<WorkoutRecord> records);
 }
 
-class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
+enum WorkoutDataIntegrityStatus { empty, healthy, recoverable, corrupt }
+
+class WorkoutDataIntegrityReport {
+  const WorkoutDataIntegrityReport({
+    required this.status,
+    required this.primaryRecordCount,
+    required this.invalidPrimaryRecordCount,
+    required this.recoveryRecordCount,
+  });
+
+  final WorkoutDataIntegrityStatus status;
+  final int primaryRecordCount;
+  final int invalidPrimaryRecordCount;
+  final int recoveryRecordCount;
+
+  bool get canRecover => status == WorkoutDataIntegrityStatus.recoverable;
+}
+
+class WorkoutArchiveDecodeResult {
+  const WorkoutArchiveDecodeResult({
+    required this.isValid,
+    required this.records,
+    this.error,
+  });
+
+  final bool isValid;
+  final List<WorkoutRecord> records;
+  final String? error;
+}
+
+class WorkoutArchiveCodec {
+  const WorkoutArchiveCodec();
+
+  static const schemaVersion = 1;
+
+  String encode(List<WorkoutRecord> records, {DateTime? createdAt}) {
+    final payload = jsonEncode({
+      'schemaVersion': schemaVersion,
+      'records': records
+          .map(SharedPreferencesWorkoutPersistence._encodeRecord)
+          .toList(growable: false),
+    });
+    return jsonEncode({
+      'schemaVersion': schemaVersion,
+      'createdAt': (createdAt ?? DateTime.now()).toUtc().toIso8601String(),
+      'checksum': sha256.convert(utf8.encode(payload)).toString(),
+      'payload': base64Encode(utf8.encode(payload)),
+    });
+  }
+
+  WorkoutArchiveDecodeResult decode(String? archive) {
+    if (archive == null || archive.isEmpty) {
+      return const WorkoutArchiveDecodeResult(
+        isValid: false,
+        records: [],
+        error: 'missing archive',
+      );
+    }
+    try {
+      final envelope = jsonDecode(archive) as Map<String, dynamic>;
+      if (envelope['schemaVersion'] != schemaVersion) {
+        return const WorkoutArchiveDecodeResult(
+          isValid: false,
+          records: [],
+          error: 'unsupported schema',
+        );
+      }
+      final payload = utf8.decode(base64Decode(envelope['payload'] as String));
+      final checksum = sha256.convert(utf8.encode(payload)).toString();
+      if (checksum != envelope['checksum']) {
+        return const WorkoutArchiveDecodeResult(
+          isValid: false,
+          records: [],
+          error: 'checksum mismatch',
+        );
+      }
+      final decoded = jsonDecode(payload) as Map<String, dynamic>;
+      final rawRecords = decoded['records'] as List<dynamic>? ?? const [];
+      final records = rawRecords
+          .whereType<Map>()
+          .map((value) => jsonEncode(Map<String, dynamic>.from(value)))
+          .map(SharedPreferencesWorkoutPersistence._decodeRecord)
+          .whereType<WorkoutRecord>()
+          .toList(growable: false);
+      if (records.length != rawRecords.length) {
+        return const WorkoutArchiveDecodeResult(
+          isValid: false,
+          records: [],
+          error: 'invalid record payload',
+        );
+      }
+      return WorkoutArchiveDecodeResult(isValid: true, records: records);
+    } on Object {
+      return const WorkoutArchiveDecodeResult(
+        isValid: false,
+        records: [],
+        error: 'malformed archive',
+      );
+    }
+  }
+}
+
+abstract interface class WorkoutRecoveryPersistence {
+  Future<WorkoutDataIntegrityReport> inspectIntegrity();
+  Future<List<WorkoutRecord>?> readRecoverySnapshot();
+}
+
+class SharedPreferencesWorkoutPersistence
+    implements WorkoutPersistence, WorkoutRecoveryPersistence {
   static const storageKey = 'movea.workouts.v1';
+  static const recoveryKey = 'movea.workouts.recovery.v1';
+  static const _archiveCodec = WorkoutArchiveCodec();
 
   @override
   Future<List<WorkoutRecord>> read() async {
     final preferences = await SharedPreferences.getInstance();
     final payloads = preferences.getStringList(storageKey) ?? const [];
-    return payloads
+    final records = payloads
         .map(_decodeRecord)
         .whereType<WorkoutRecord>()
         .toList(growable: false);
+    if (records.length == payloads.length) return records;
+    final recovery = _archiveCodec.decode(preferences.getString(recoveryKey));
+    return recovery.isValid ? recovery.records : records;
   }
 
   @override
@@ -30,6 +144,38 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
       storageKey,
       records.map((record) => jsonEncode(_encodeRecord(record))).toList(),
     );
+    await preferences.setString(recoveryKey, _archiveCodec.encode(records));
+  }
+
+  @override
+  Future<WorkoutDataIntegrityReport> inspectIntegrity() async {
+    final preferences = await SharedPreferences.getInstance();
+    final payloads = preferences.getStringList(storageKey) ?? const [];
+    final validPrimary = payloads.map(_decodeRecord).whereType<WorkoutRecord>();
+    final validPrimaryCount = validPrimary.length;
+    final invalidCount = payloads.length - validPrimaryCount;
+    final recovery = _archiveCodec.decode(preferences.getString(recoveryKey));
+    final status =
+        payloads.isEmpty && (!recovery.isValid || recovery.records.isEmpty)
+        ? WorkoutDataIntegrityStatus.empty
+        : invalidCount == 0
+        ? WorkoutDataIntegrityStatus.healthy
+        : recovery.isValid
+        ? WorkoutDataIntegrityStatus.recoverable
+        : WorkoutDataIntegrityStatus.corrupt;
+    return WorkoutDataIntegrityReport(
+      status: status,
+      primaryRecordCount: validPrimaryCount,
+      invalidPrimaryRecordCount: invalidCount,
+      recoveryRecordCount: recovery.isValid ? recovery.records.length : 0,
+    );
+  }
+
+  @override
+  Future<List<WorkoutRecord>?> readRecoverySnapshot() async {
+    final preferences = await SharedPreferences.getInstance();
+    final result = _archiveCodec.decode(preferences.getString(recoveryKey));
+    return result.isValid ? result.records : null;
   }
 
   static Map<String, dynamic> _encodeRecord(WorkoutRecord record) => {
@@ -242,11 +388,47 @@ class WorkoutStore extends ChangeNotifier {
 
   Future<void> restore() async {
     if (_isRestored) return;
+    final hadLocalRecords = _records.isNotEmpty;
     final records = await _persistence.read();
     final localIds = _records.map((record) => record.id).toSet();
     _records..addAll(records.where((record) => !localIds.contains(record.id)));
     _isRestored = true;
     notifyListeners();
+    if (hadLocalRecords) await _persistence.write(_records);
+  }
+
+  Future<WorkoutDataIntegrityReport> inspectIntegrity() async {
+    final persistence = _persistence;
+    if (persistence is WorkoutRecoveryPersistence) {
+      return (persistence as WorkoutRecoveryPersistence).inspectIntegrity();
+    }
+    return WorkoutDataIntegrityReport(
+      status: _records.isEmpty
+          ? WorkoutDataIntegrityStatus.empty
+          : WorkoutDataIntegrityStatus.healthy,
+      primaryRecordCount: _records.length,
+      invalidPrimaryRecordCount: 0,
+      recoveryRecordCount: 0,
+    );
+  }
+
+  Future<bool> repairFromRecoverySnapshot() async {
+    final persistence = _persistence;
+    if (persistence is! WorkoutRecoveryPersistence) return false;
+    final recovered = await (persistence as WorkoutRecoveryPersistence)
+        .readRecoverySnapshot();
+    if (recovered == null) return false;
+    _records
+      ..clear()
+      ..addAll(recovered);
+    _isRestored = true;
+    notifyListeners();
+    await _persistence.write(_records);
+    return true;
+  }
+
+  Future<void> refreshRecoverySnapshot() async {
+    if (!_isRestored) await restore();
     await _persistence.write(_records);
   }
 }
@@ -311,6 +493,65 @@ class TrainingProfileStore extends ChangeNotifier {
     _isRestored = true;
     notifyListeners();
     await _persistence.write(_profile);
+  }
+}
+
+class RouteGuidancePreferences {
+  const RouteGuidancePreferences({this.hapticsEnabled = true});
+
+  final bool hapticsEnabled;
+}
+
+abstract interface class RouteGuidancePreferencesPersistence {
+  Future<RouteGuidancePreferences> read();
+  Future<void> write(RouteGuidancePreferences preferences);
+}
+
+class SharedPreferencesRouteGuidancePreferencesPersistence
+    implements RouteGuidancePreferencesPersistence {
+  static const hapticsKey = 'movea.route_guidance.haptics.v1';
+
+  @override
+  Future<RouteGuidancePreferences> read() async {
+    final preferences = await SharedPreferences.getInstance();
+    return RouteGuidancePreferences(
+      hapticsEnabled: preferences.getBool(hapticsKey) ?? true,
+    );
+  }
+
+  @override
+  Future<void> write(RouteGuidancePreferences value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(hapticsKey, value.hapticsEnabled);
+  }
+}
+
+class RouteGuidancePreferencesStore extends ChangeNotifier {
+  RouteGuidancePreferencesStore({
+    RouteGuidancePreferencesPersistence? persistence,
+  }) : _persistence =
+           persistence ??
+           SharedPreferencesRouteGuidancePreferencesPersistence();
+
+  final RouteGuidancePreferencesPersistence _persistence;
+  RouteGuidancePreferences _preferences = const RouteGuidancePreferences();
+  bool _isRestored = false;
+
+  RouteGuidancePreferences get preferences => _preferences;
+  bool get isRestored => _isRestored;
+
+  Future<void> restore() async {
+    if (_isRestored) return;
+    _preferences = await _persistence.read();
+    _isRestored = true;
+    notifyListeners();
+  }
+
+  Future<void> setHapticsEnabled(bool enabled) async {
+    _preferences = RouteGuidancePreferences(hapticsEnabled: enabled);
+    _isRestored = true;
+    notifyListeners();
+    await _persistence.write(_preferences);
   }
 }
 

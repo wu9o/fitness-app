@@ -29,6 +29,19 @@ class TrainingProfileScope extends InheritedNotifier<TrainingProfileStore> {
       ?.notifier;
 }
 
+class RouteGuidancePreferencesScope
+    extends InheritedNotifier<RouteGuidancePreferencesStore> {
+  const RouteGuidancePreferencesScope({
+    required RouteGuidancePreferencesStore notifier,
+    required super.child,
+    super.key,
+  }) : super(notifier: notifier);
+
+  static RouteGuidancePreferencesStore? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<RouteGuidancePreferencesScope>()
+      ?.notifier;
+}
+
 class ActivitySessionSnapshot {
   const ActivitySessionSnapshot({
     required this.activity,
@@ -175,7 +188,7 @@ class _MoveaShellState extends State<MoveaShell> {
   Future<void> openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => const SettingsPage(),
+        builder: (_) => SettingsPage(workoutStore: store),
       ),
     );
   }
@@ -2533,9 +2546,10 @@ class _DayDot extends StatelessWidget {
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({this.profileStore, super.key});
+  const SettingsPage({this.profileStore, this.workoutStore, super.key});
 
   final TrainingProfileStore? profileStore;
+  final WorkoutStore? workoutStore;
 
   Future<void> _editMaximumHeartRate(
     BuildContext context,
@@ -2687,6 +2701,8 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = profileStore ?? TrainingProfileScope.maybeOf(context);
+    final routePreferencesStore =
+        RouteGuidancePreferencesScope.maybeOf(context);
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: MoveaContentFrame(
@@ -2716,6 +2732,54 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 24),
+            const Text('路线跟随',
+                style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: moveaInk)),
+            const SizedBox(height: 6),
+            const Text('在运动中接近转向、偏离路线或到达终点时提醒你。',
+                style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 14),
+            if (routePreferencesStore != null)
+              AnimatedBuilder(
+                animation: routePreferencesStore,
+                builder: (context, _) => Card(
+                  child: SwitchListTile(
+                    key: const ValueKey('route-haptics-toggle'),
+                    secondary: const Icon(Icons.vibration, color: moveaBlue),
+                    title: const Text('路线触觉提醒',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: const Text('转向、偏航、返回路线和即将到达时触发一次'),
+                    value: routePreferencesStore.preferences.hapticsEnabled,
+                    onChanged: (value) => unawaited(
+                      routePreferencesStore.setHapticsEnabled(value),
+                    ),
+                  ),
+                ),
+              )
+            else
+              const Card(
+                child: ListTile(
+                  leading: Icon(Icons.vibration),
+                  title: Text('路线触觉提醒'),
+                  subtitle: Text('当前预览未连接提醒设置'),
+                ),
+              ),
+            const SizedBox(height: 24),
+            if (workoutStore != null) ...[
+              const Text('数据安全',
+                  style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: moveaInk)),
+              const SizedBox(height: 6),
+              const Text('检查本地运动记录，并维护一份带校验和的恢复快照。',
+                  style: TextStyle(color: Colors.black54)),
+              const SizedBox(height: 14),
+              _WorkoutIntegrityCard(store: workoutStore!),
+              const SizedBox(height: 24),
+            ],
             const Text('地图服务',
                 style: TextStyle(
                     fontSize: 24,
@@ -2757,6 +2821,162 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkoutIntegrityCard extends StatefulWidget {
+  const _WorkoutIntegrityCard({required this.store});
+
+  final WorkoutStore store;
+
+  @override
+  State<_WorkoutIntegrityCard> createState() => _WorkoutIntegrityCardState();
+}
+
+class _WorkoutIntegrityCardState extends State<_WorkoutIntegrityCard> {
+  WorkoutDataIntegrityReport? report;
+  bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_inspect());
+  }
+
+  Future<void> _inspect() async {
+    final result = await widget.store.inspectIntegrity();
+    if (!mounted) return;
+    setState(() => report = result);
+  }
+
+  Future<void> _refreshSnapshot() async {
+    setState(() => busy = true);
+    await widget.store.refreshRecoverySnapshot();
+    await _inspect();
+    if (!mounted) return;
+    setState(() => busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('恢复快照已更新并通过校验')),
+    );
+  }
+
+  Future<void> _repair() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('从恢复快照修复？'),
+        content: const Text('将用最近一次通过校验的完整快照替换损坏的本地记录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('确认修复'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => busy = true);
+    final repaired = await widget.store.repairFromRecoverySnapshot();
+    await _inspect();
+    if (!mounted) return;
+    setState(() => busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(repaired ? '运动记录已恢复' : '没有可用的恢复快照')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = report;
+    if (current == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+    final (title, subtitle, icon, color) = switch (current.status) {
+      WorkoutDataIntegrityStatus.empty => (
+          '暂无运动记录',
+          '完成运动后会自动生成带 SHA-256 校验的恢复快照',
+          Icons.inventory_2_outlined,
+          Colors.black54,
+        ),
+      WorkoutDataIntegrityStatus.healthy => (
+          '本地记录完整',
+          '${current.primaryRecordCount} 条记录 · 恢复快照 ${current.recoveryRecordCount} 条',
+          Icons.verified_user_outlined,
+          const Color(0xFF2EAF72),
+        ),
+      WorkoutDataIntegrityStatus.recoverable => (
+          '检测到损坏，可恢复',
+          '${current.invalidPrimaryRecordCount} 条记录无法读取 · 快照含 ${current.recoveryRecordCount} 条',
+          Icons.warning_amber_rounded,
+          Colors.deepOrange,
+        ),
+      WorkoutDataIntegrityStatus.corrupt => (
+          '记录与快照均不可用',
+          '${current.invalidPrimaryRecordCount} 条记录无法读取，请勿继续覆盖数据',
+          Icons.gpp_bad_outlined,
+          Colors.redAccent,
+        ),
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: color.withValues(alpha: .12),
+                  child: Icon(icon, color: color),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(subtitle,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (current.canRecover)
+              FilledButton.icon(
+                onPressed: busy ? null : _repair,
+                icon: const Icon(Icons.restore),
+                label: Text(busy ? '修复中…' : '从恢复快照修复'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(44),
+                  backgroundColor: moveaCoral,
+                ),
+              )
+            else if (current.status != WorkoutDataIntegrityStatus.corrupt)
+              OutlinedButton.icon(
+                onPressed: busy ? null : _refreshSnapshot,
+                icon: const Icon(Icons.shield_outlined),
+                label: Text(busy ? '校验中…' : '校验并更新恢复快照'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(44),
+                ),
+              ),
           ],
         ),
       ),
@@ -2841,7 +3061,9 @@ class _ActivityPageState extends State<ActivityPage> {
   double distanceMeters = 0;
   int discardedLocationSamples = 0;
   final List<LocationPoint> livePoints = [];
+  final RouteGuidanceCueTracker routeCueTracker = RouteGuidanceCueTracker();
   StreamSubscription<LocationPoint>? locationSubscription;
+  RouteGuidancePreferencesStore? routeGuidancePreferencesStore;
 
   @override
   void initState() {
@@ -2869,7 +3091,15 @@ class _ActivityPageState extends State<ActivityPage> {
     super.didUpdateWidget(oldWidget);
     if (!recording && oldWidget.selectedRoute?.id != widget.selectedRoute?.id) {
       panelExpanded = true;
+      routeCueTracker.reset();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeGuidancePreferencesStore =
+        RouteGuidancePreferencesScope.maybeOf(context);
   }
 
   bool get recording => startedAt != null;
@@ -2903,6 +3133,7 @@ class _ActivityPageState extends State<ActivityPage> {
       distanceMeters = 0;
       discardedLocationSamples = 0;
       livePoints.clear();
+      routeCueTracker.reset();
     });
     widget.locationRepository.resetRejectedSampleCount();
     _emitSessionState();
@@ -3016,8 +3247,47 @@ class _ActivityPageState extends State<ActivityPage> {
       livePoints.add(point);
       if (step >= 2) distanceMeters += step;
     });
+    _handleRouteGuidanceCue(point);
     _emitSessionState();
     unawaited(_persistDraft());
+  }
+
+  void _handleRouteGuidanceCue(LocationPoint point) {
+    final route = widget.selectedRoute;
+    if (route == null || route.points.length < 2) return;
+    if (routeGuidancePreferencesStore?.preferences.hapticsEnabled != true) {
+      return;
+    }
+    final cue = routeCueTracker.update(
+      calculateRouteGuidance(point, route.points),
+    );
+    if (cue == null) return;
+    switch (cue) {
+      case RouteGuidanceCue.offRoute:
+      case RouteGuidanceCue.arriving:
+        unawaited(HapticFeedback.heavyImpact());
+      case RouteGuidanceCue.backOnRoute:
+      case RouteGuidanceCue.turnLeft:
+      case RouteGuidanceCue.turnRight:
+        unawaited(HapticFeedback.mediumImpact());
+    }
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.vibration, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(child: Text(cue.label)),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   Duration activeElapsed() {
@@ -3111,6 +3381,7 @@ class _ActivityPageState extends State<ActivityPage> {
       distanceMeters = 0;
       discardedLocationSamples = 0;
       livePoints.clear();
+      routeCueTracker.reset();
     });
     _emitSessionState();
     widget.onClearRoute();

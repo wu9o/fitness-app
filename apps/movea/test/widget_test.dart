@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -286,6 +287,32 @@ void main() {
     expect(find.text('≥ 171 bpm'), findsOneWidget);
   });
 
+  testWidgets('Settings persist the route haptics preference', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profileStore = TrainingProfileStore();
+    final routePreferencesStore = RouteGuidancePreferencesStore();
+    await profileStore.restore();
+    await routePreferencesStore.restore();
+    await tester.pumpWidget(
+      RouteGuidancePreferencesScope(
+        notifier: routePreferencesStore,
+        child: MaterialApp(
+          home: SettingsPage(profileStore: profileStore),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(routePreferencesStore.preferences.hapticsEnabled, isTrue);
+    await tester.tap(find.byKey(const ValueKey('route-haptics-toggle')));
+    await tester.pumpAndSettle();
+    expect(routePreferencesStore.preferences.hapticsEnabled, isFalse);
+
+    final restored = RouteGuidancePreferencesStore();
+    await restored.restore();
+    expect(restored.preferences.hapticsEnabled, isFalse);
+  });
+
   testWidgets('Movea activity flow supports type, pause, finish and history',
       (tester) async {
     await pumpMobile(tester);
@@ -565,6 +592,63 @@ void main() {
     expect(restored.records.single.activeEnergyKilocalories, 512);
     expect(restored.records.single.heartRateSamples, hasLength(2));
     expect(restored.records.single.heartRateSamples.last.bpm, 145);
+  });
+
+  test('Workout archive rejects a modified payload', () {
+    final record = WorkoutRecord(
+      id: 'archive-checksum',
+      activity: ActivityType.run,
+      startedAt: DateTime(2026, 9, 17, 7),
+      duration: const Duration(minutes: 20),
+      distanceMeters: 3200,
+    );
+    const codec = WorkoutArchiveCodec();
+    final archive = codec.encode(
+      [record],
+      createdAt: DateTime.utc(2026, 9, 17),
+    );
+    final decoded = codec.decode(archive);
+    expect(decoded.isValid, isTrue);
+    expect(decoded.records.single.id, record.id);
+
+    final envelope = jsonDecode(archive) as Map<String, dynamic>;
+    envelope['checksum'] = List.filled(64, '0').join();
+    final tampered = codec.decode(jsonEncode(envelope));
+    expect(tampered.isValid, isFalse);
+    expect(tampered.error, 'checksum mismatch');
+  });
+
+  test('Workout storage detects corruption and repairs from its snapshot',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final persistence = SharedPreferencesWorkoutPersistence();
+    final record = WorkoutRecord(
+      id: 'recoverable-record',
+      activity: ActivityType.ride,
+      startedAt: DateTime(2026, 9, 17, 8),
+      duration: const Duration(minutes: 40),
+      distanceMeters: 12000,
+    );
+    await persistence.write([record]);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setStringList(
+      SharedPreferencesWorkoutPersistence.storageKey,
+      ['not-json'],
+    );
+
+    final report = await persistence.inspectIntegrity();
+    expect(report.status, WorkoutDataIntegrityStatus.recoverable);
+    expect(report.invalidPrimaryRecordCount, 1);
+    expect(report.recoveryRecordCount, 1);
+    expect((await persistence.read()).single.id, record.id);
+
+    final store = WorkoutStore(persistence: persistence);
+    await store.restore();
+    expect(store.records.single.id, record.id);
+    expect(await store.repairFromRecoverySnapshot(), isTrue);
+    final repaired = await persistence.inspectIntegrity();
+    expect(repaired.status, WorkoutDataIntegrityStatus.healthy);
+    expect(repaired.primaryRecordCount, 1);
   });
 
   test('WorkoutStore de-duplicates imported source workouts', () async {
@@ -912,6 +996,91 @@ void main() {
     expect(arriving.isOffRoute, isFalse);
     expect(arriving.maneuver, RouteManeuver.arrive);
     expect(arriving.remainingMeters, lessThan(25));
+  });
+
+  test('Route guidance cues trigger once for turns and route transitions', () {
+    final tracker = RouteGuidanceCueTracker();
+    RouteGuidance guidance({
+      required double distanceToRoute,
+      required double distanceToManeuver,
+      required RouteManeuver maneuver,
+      int segment = 0,
+    }) =>
+        RouteGuidance(
+          distanceToRouteMeters: distanceToRoute,
+          progress: .4,
+          remainingMeters: 200,
+          distanceToManeuverMeters: distanceToManeuver,
+          maneuver: maneuver,
+          segmentIndex: segment,
+        );
+
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 5,
+        distanceToManeuver: 100,
+        maneuver: RouteManeuver.right,
+      )),
+      isNull,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 5,
+        distanceToManeuver: 50,
+        maneuver: RouteManeuver.right,
+      )),
+      RouteGuidanceCue.turnRight,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 5,
+        distanceToManeuver: 30,
+        maneuver: RouteManeuver.right,
+      )),
+      isNull,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 120,
+        distanceToManeuver: 20,
+        maneuver: RouteManeuver.right,
+      )),
+      RouteGuidanceCue.offRoute,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 110,
+        distanceToManeuver: 20,
+        maneuver: RouteManeuver.right,
+      )),
+      isNull,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 8,
+        distanceToManeuver: 20,
+        maneuver: RouteManeuver.right,
+      )),
+      RouteGuidanceCue.backOnRoute,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 4,
+        distanceToManeuver: 12,
+        maneuver: RouteManeuver.arrive,
+        segment: 1,
+      )),
+      RouteGuidanceCue.arriving,
+    );
+    expect(
+      tracker.update(guidance(
+        distanceToRoute: 4,
+        distanceToManeuver: 8,
+        maneuver: RouteManeuver.arrive,
+        segment: 1,
+      )),
+      isNull,
+    );
   });
 
   test('Location samples reject invalid coordinates and Null Island', () {
