@@ -99,6 +99,12 @@ class PlatformHealthRepository implements HealthRepository {
 
 class UnsupportedLocationRepository implements LocationRepository {
   @override
+  int get rejectedSampleCount => 0;
+
+  @override
+  void resetRejectedSampleCount() {}
+
+  @override
   Stream<LocationPoint> get points => const Stream.empty();
 
   @override
@@ -118,6 +124,13 @@ class GeolocatorLocationRepository implements LocationRepository {
   final StreamController<LocationPoint> _points =
       StreamController<LocationPoint>.broadcast();
   StreamSubscription<Position>? _subscription;
+  int _rejectedSampleCount = 0;
+
+  @override
+  int get rejectedSampleCount => _rejectedSampleCount;
+
+  @override
+  void resetRejectedSampleCount() => _rejectedSampleCount = 0;
 
   @override
   Stream<LocationPoint> get points => _points.stream;
@@ -168,7 +181,10 @@ class GeolocatorLocationRepository implements LocationRepository {
 
   void _emit(Position position) {
     // Low-quality samples can create visibly false jumps in a running track.
-    if (position.accuracy.isFinite && position.accuracy > 80) return;
+    if (position.accuracy.isFinite && position.accuracy > 80) {
+      _rejectedSampleCount++;
+      return;
+    }
     final point = LocationPoint(
       latitude: position.latitude,
       longitude: position.longitude,
@@ -183,7 +199,10 @@ class GeolocatorLocationRepository implements LocationRepository {
     // usable fix arrives. Letting that sample into a track would make every
     // following real point look like an impossible multi-thousand-kilometre
     // jump and permanently poison route guidance.
-    if (!point.hasUsableCoordinate) return;
+    if (!point.hasUsableCoordinate) {
+      _rejectedSampleCount++;
+      return;
+    }
     _points.add(point);
   }
 

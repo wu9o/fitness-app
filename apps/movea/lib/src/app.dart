@@ -2208,8 +2208,10 @@ class _ActivityPageState extends State<ActivityPage> {
   bool panelExpanded = true;
   bool locationStarting = false;
   bool recoveredSession = false;
+  bool finishing = false;
   String? locationError;
   double distanceMeters = 0;
+  int discardedLocationSamples = 0;
   final List<LocationPoint> livePoints = [];
   StreamSubscription<LocationPoint>? locationSubscription;
 
@@ -2227,6 +2229,7 @@ class _ActivityPageState extends State<ActivityPage> {
       panelExpanded = true;
       recoveredSession = true;
       distanceMeters = draft.distanceMeters;
+      discardedLocationSamples = draft.discardedLocationSamples;
       livePoints.addAll(draft.routePoints);
       _startTicker();
       WidgetsBinding.instance.addPostFrameCallback((_) => _emitSessionState());
@@ -2270,8 +2273,10 @@ class _ActivityPageState extends State<ActivityPage> {
       panelExpanded = false;
       locationStarting = activity.usesLocation;
       distanceMeters = 0;
+      discardedLocationSamples = 0;
       livePoints.clear();
     });
+    widget.locationRepository.resetRejectedSampleCount();
     _emitSessionState();
     unawaited(_persistDraft());
 
@@ -2324,6 +2329,8 @@ class _ActivityPageState extends State<ActivityPage> {
       distanceMeters: distanceMeters,
       routeId: widget.selectedRoute?.id,
       routePoints: List.unmodifiable(livePoints),
+      discardedLocationSamples: discardedLocationSamples +
+          widget.locationRepository.rejectedSampleCount,
     ));
   }
 
@@ -2359,7 +2366,10 @@ class _ActivityPageState extends State<ActivityPage> {
     if (!mounted || startedAt == null || paused || !activity.usesLocation) {
       return;
     }
-    if (!point.hasUsableCoordinate) return;
+    if (!point.hasUsableCoordinate) {
+      discardedLocationSamples++;
+      return;
+    }
     while (livePoints.isNotEmpty && !livePoints.last.hasUsableCoordinate) {
       livePoints.removeLast();
     }
@@ -2369,7 +2379,10 @@ class _ActivityPageState extends State<ActivityPage> {
       step = _distanceBetween(previous, point);
       // A sudden multi-hundred-metre jump is usually a bad GPS sample, not a
       // real running step. Keep the marker/track continuous instead.
-      if (step > 250) return;
+      if (step > 250) {
+        discardedLocationSamples++;
+        return;
+      }
     }
     setState(() {
       livePoints.add(point);
@@ -2425,23 +2438,38 @@ class _ActivityPageState extends State<ActivityPage> {
     await _persistDraft();
   }
 
-  void finish() {
+  Future<void> finish() async {
     final startTime = startedAt;
-    if (startTime == null) return;
-    if (activity.usesLocation) {
-      unawaited(widget.locationRepository.stop());
+    if (startTime == null || finishing) return;
+    setState(() => finishing = true);
+    late final WorkoutRecord record;
+    try {
+      if (activity.usesLocation) {
+        await widget.locationRepository.stop();
+      }
+      record = WorkoutRecord(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          activity: activity,
+          startedAt: startTime,
+          duration: activeElapsed(),
+          distanceMeters: distanceMeters,
+          routePoints: List.unmodifiable(livePoints),
+          discardedLocationSamples: discardedLocationSamples +
+              widget.locationRepository.rejectedSampleCount);
+      await widget.store.addAndPersist(record);
+      await widget.activeWorkoutStore.clear();
+      await _cancelLocationSubscription();
+      timer?.cancel();
+    } on Object {
+      if (!mounted) return;
+      setState(() => finishing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('运动记录保存失败，请稍后重试')),
+      );
+      return;
     }
-    final record = WorkoutRecord(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        activity: activity,
-        startedAt: startTime,
-        duration: activeElapsed(),
-        distanceMeters: distanceMeters,
-        routePoints: List.unmodifiable(livePoints));
-    widget.store.add(record);
-    unawaited(widget.activeWorkoutStore.clear());
-    unawaited(_cancelLocationSubscription());
-    timer?.cancel();
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
     setState(() {
       startedAt = null;
       pausedAt = null;
@@ -2449,20 +2477,26 @@ class _ActivityPageState extends State<ActivityPage> {
       elapsed = Duration.zero;
       paused = false;
       recoveredSession = false;
+      finishing = false;
       panelExpanded = true;
       locationStarting = false;
       distanceMeters = 0;
+      discardedLocationSamples = 0;
       livePoints.clear();
     });
     _emitSessionState();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(activity.usesLocation
-            ? '已保存${record.activity.label} · ${record.distanceLabel}'
-            : '已保存${record.activity.label} · ${formatDuration(record.duration)}'),
+    widget.onClearRoute();
+    widget.onChangeActivity();
+    widget.onMinimize();
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => WorkoutDetailPage(
+          record: record,
+          routeStore: widget.routeStore,
+          justCompleted: true,
+        ),
       ),
     );
-    widget.onMinimize();
   }
 
   Future<void> _cancelLocationSubscription() async {
@@ -2679,7 +2713,8 @@ class _ActivityPageState extends State<ActivityPage> {
                                       backgroundColor: moveaCoral))),
                           const SizedBox(width: 8),
                           OutlinedButton(
-                              onPressed: finish, child: const Text('结束')),
+                              onPressed: finishing ? null : finish,
+                              child: Text(finishing ? '保存中…' : '结束')),
                         ]),
                       ],
                       if (panelExpanded) ...[
@@ -2781,7 +2816,8 @@ class _ActivityPageState extends State<ActivityPage> {
                                         backgroundColor: moveaCoral))),
                             const SizedBox(width: 10),
                             OutlinedButton(
-                                onPressed: finish, child: const Text('结束')),
+                                onPressed: finishing ? null : finish,
+                                child: Text(finishing ? '保存中…' : '结束')),
                           ]),
                         ] else ...[
                           Text(activity.icon,
@@ -4802,10 +4838,16 @@ class _HistoryFilter extends StatelessWidget {
 }
 
 class WorkoutDetailPage extends StatelessWidget {
-  const WorkoutDetailPage({required this.record, this.routeStore, super.key});
+  const WorkoutDetailPage({
+    required this.record,
+    this.routeStore,
+    this.justCompleted = false,
+    super.key,
+  });
 
   final WorkoutRecord record;
   final RouteStore? routeStore;
+  final bool justCompleted;
 
   Future<void> _saveAsRoute(BuildContext context) async {
     final store = routeStore;
@@ -4846,7 +4888,7 @@ class WorkoutDetailPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('运动详情'),
+        title: Text(justCompleted ? '运动总结' : '运动详情'),
         actions: [
           if (routeStore != null && record.routePoints.length > 1)
             IconButton(
@@ -4861,6 +4903,38 @@ class WorkoutDetailPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
           children: [
+            if (justCompleted) ...[
+              const Card(
+                color: moveaMint,
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Color(0xFF2EAF72),
+                        foregroundColor: Colors.white,
+                        child: Icon(Icons.check),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('运动已保存',
+                                style: TextStyle(
+                                    fontSize: 17, fontWeight: FontWeight.w800)),
+                            SizedBox(height: 3),
+                            Text('记录已写入本地，可从运动中心再次查看',
+                                style: TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             Card(
               color: moveaLemon,
               child: Padding(
@@ -4973,6 +5047,66 @@ class WorkoutDetailPage extends StatelessWidget {
                   ),
                 ),
               ),
+            if (record.activity.usesLocation) ...[
+              const SizedBox(height: 18),
+              const MoveaSectionTitle('GPS 数据质量'),
+              const SizedBox(height: 10),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.gps_fixed, color: moveaBlue),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text('轨迹采样',
+                                style: TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w800)),
+                          ),
+                          _QualityBadge(label: record.gpsQualityLabel),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _QualityMetric(
+                              label: '有效点位',
+                              value: '${record.routePoints.length}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _QualityMetric(
+                              label: '平均精度',
+                              value: record.averageAccuracyMeters > 0
+                                  ? '约 ${record.averageAccuracyMeters.round()} m'
+                                  : '--',
+                            ),
+                          ),
+                          Expanded(
+                            child: _QualityMetric(
+                              label: '已过滤',
+                              value: '${record.discardedLocationSamples}',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '距离、轨迹和分段只使用有效 GPS 采样；精度过低或跳点数据已自动过滤。',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.black54, height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             if (splits.isNotEmpty) ...[
               const SizedBox(height: 18),
               const MoveaSectionTitle('分段配速'),
@@ -5054,9 +5188,63 @@ class WorkoutDetailPage extends StatelessWidget {
                     : '动作完成度、训练负荷和恢复建议'),
               ),
             ),
+            if (justCompleted) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.check),
+                label: const Text('完成'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: moveaCoral,
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _QualityBadge extends StatelessWidget {
+  const _QualityBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: moveaMint,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(label,
+            style: const TextStyle(
+                color: Color(0xFF217A55), fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+}
+
+class _QualityMetric extends StatelessWidget {
+  const _QualityMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 3),
+        Text(label,
+            style: const TextStyle(fontSize: 12, color: Colors.black54)),
+      ],
     );
   }
 }

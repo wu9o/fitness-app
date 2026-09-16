@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:movea_data/movea_data.dart';
@@ -21,6 +23,29 @@ class _FakeHealthRepository implements HealthRepository {
       source: HealthDataSource.healthKit,
       lastSyncedAt: null,
     );
+  }
+}
+
+class _GatedActiveWorkoutPersistence implements ActiveWorkoutPersistence {
+  final Completer<void> writeGate = Completer<void>();
+  ActiveWorkoutDraft? stored;
+  int writes = 0;
+  int clears = 0;
+
+  @override
+  Future<ActiveWorkoutDraft?> read() async => stored;
+
+  @override
+  Future<void> write(ActiveWorkoutDraft draft) async {
+    writes++;
+    await writeGate.future;
+    stored = draft;
+  }
+
+  @override
+  Future<void> clear() async {
+    clears++;
+    stored = null;
   }
 }
 
@@ -204,7 +229,25 @@ void main() {
     await tester.tap(find.text('继续'));
     await tester.pump();
     await tester.tap(find.text('结束'));
-    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('运动总结'), findsOneWidget);
+    expect(find.text('运动已保存'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('GPS 数据质量'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('GPS 数据质量'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('完成'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
     expect(find.text('运动记录'), findsOneWidget);
     await tester.tap(find.text('全部 1 条'));
     await tester.pumpAndSettle();
@@ -247,7 +290,18 @@ void main() {
     await tester.tap(find.text('正在记录 · GPS 轨迹'));
     await tester.pump();
     await tester.tap(find.text('结束'));
-    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('运动总结'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('完成'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
     expect(find.text('跑步 · 正在记录'), findsNothing);
   });
 
@@ -375,6 +429,7 @@ void main() {
       trainingPlanId: 'morning-activation',
       completedActions: 4,
       plannedActions: 6,
+      discardedLocationSamples: 3,
     ));
     await Future<void>.delayed(Duration.zero);
 
@@ -391,6 +446,7 @@ void main() {
     expect(restored.records.single.trainingPlanId, 'morning-activation');
     expect(restored.records.single.completedActions, 4);
     expect(restored.records.single.plannedActions, 6);
+    expect(restored.records.single.discardedLocationSamples, 3);
   });
 
   test('ActiveWorkoutStore restores an unfinished GPS workout', () async {
@@ -407,6 +463,7 @@ void main() {
       pausedDuration: const Duration(minutes: 2),
       distanceMeters: 2650,
       routeId: 'park-loop',
+      discardedLocationSamples: 2,
       routePoints: const [
         LocationPoint(latitude: 31.2304, longitude: 121.4737),
         LocationPoint(latitude: 31.2322, longitude: 121.4780),
@@ -419,12 +476,46 @@ void main() {
     expect(restored.draft!.activity, ActivityType.run);
     expect(restored.draft!.routeId, 'park-loop');
     expect(restored.draft!.routePoints, hasLength(2));
+    expect(restored.draft!.discardedLocationSamples, 2);
     expect(restored.draft!.savedElapsed, const Duration(minutes: 16));
 
     await restored.clear();
     final cleared = ActiveWorkoutStore(persistence: persistence);
     await cleared.restore();
     expect(cleared.draft, isNull);
+  });
+
+  test('ActiveWorkoutStore coalesces GPS drafts and clears after writes',
+      () async {
+    final persistence = _GatedActiveWorkoutPersistence();
+    final store = ActiveWorkoutStore(persistence: persistence);
+    final startedAt = DateTime(2026, 9, 16, 7, 30);
+    ActiveWorkoutDraft draft(int pointCount) => ActiveWorkoutDraft(
+          activity: ActivityType.run,
+          startedAt: startedAt,
+          updatedAt: startedAt.add(Duration(seconds: pointCount)),
+          pausedDuration: Duration.zero,
+          distanceMeters: pointCount * 10,
+          routePoints: List.generate(
+            pointCount,
+            (index) => LocationPoint(
+              latitude: 31.2304 + index * .0001,
+              longitude: 121.4737,
+            ),
+          ),
+        );
+
+    final firstSave = store.save(draft(1));
+    await Future<void>.delayed(Duration.zero);
+    final supersededSave = store.save(draft(2));
+    final clear = store.clear();
+    persistence.writeGate.complete();
+    await Future.wait([firstSave, supersededSave, clear]);
+
+    expect(persistence.writes, 1);
+    expect(persistence.clears, 1);
+    expect(persistence.stored, isNull);
+    expect(store.draft, isNull);
   });
 
   test('TrainingPlanStore persists and restores custom plans', () async {
@@ -523,6 +614,7 @@ void main() {
     expect(record.averageSpeedMetersPerSecond, 2.5);
     expect(record.elevationGainMeters, 18);
     expect(record.averageAccuracyMeters, 10);
+    expect(record.gpsQualityLabel, '优秀');
   });
 
   test('Route guidance projects progress and finds the next right turn', () {
