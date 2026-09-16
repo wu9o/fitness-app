@@ -238,13 +238,13 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('GPS 数据质量'),
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('GPS 数据质量'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('完成'),
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: find.byType(Scrollable).first,
     );
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
@@ -258,6 +258,11 @@ void main() {
     await tester.tap(find.byType(ListTile));
     await tester.pumpAndSettle();
     expect(find.text('运动详情'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('实际 GPS 轨迹'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('实际 GPS 轨迹'), findsOneWidget);
     expect(find.text('本地已保存'), findsOneWidget);
   });
@@ -297,9 +302,11 @@ void main() {
     expect(find.text('运动总结'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('完成'),
-      300,
-      scrollable: find.byType(Scrollable).last,
+      500,
+      scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('完成'));
+    await tester.pump();
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
     expect(find.text('跑步 · 正在记录'), findsNothing);
@@ -430,6 +437,7 @@ void main() {
       completedActions: 4,
       plannedActions: 6,
       discardedLocationSamples: 3,
+      perceivedEffort: WorkoutEffort.hard,
     ));
     await Future<void>.delayed(Duration.zero);
 
@@ -447,6 +455,8 @@ void main() {
     expect(restored.records.single.completedActions, 4);
     expect(restored.records.single.plannedActions, 6);
     expect(restored.records.single.discardedLocationSamples, 3);
+    expect(restored.records.single.perceivedEffort, WorkoutEffort.hard);
+    expect(restored.records.single.subjectiveTrainingLoad, 294);
   });
 
   test('ActiveWorkoutStore restores an unfinished GPS workout', () async {
@@ -609,12 +619,14 @@ void main() {
           altitudeMeters: 22,
         ),
       ],
+      perceivedEffort: WorkoutEffort.moderate,
     );
 
     expect(record.averageSpeedMetersPerSecond, 2.5);
     expect(record.elevationGainMeters, 18);
     expect(record.averageAccuracyMeters, 10);
     expect(record.gpsQualityLabel, '优秀');
+    expect(record.subjectiveTrainingLoad, 40);
   });
 
   test('Route guidance projects progress and finds the next right turn', () {
@@ -705,11 +717,48 @@ void main() {
       home: WorkoutDetailPage(record: record),
     ));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -620));
-    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text('分段配速'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     expect(find.text('分段配速'), findsOneWidget);
     expect(find.text('1 km'), findsOneWidget);
     expect(find.text('最后'), findsOneWidget);
+  });
+
+  testWidgets('Workout feedback persists subjective training load',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = WorkoutStore();
+    await store.restore();
+    final record = WorkoutRecord(
+      id: 'effort-test',
+      activity: ActivityType.strength,
+      startedAt: DateTime(2026, 9, 16, 18),
+      duration: const Duration(minutes: 12),
+      distanceMeters: 0,
+    );
+    await store.addAndPersist(record);
+
+    await tester.pumpWidget(MaterialApp(
+      home: WorkoutDetailPage(record: record, workoutStore: store),
+    ));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('适中'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('适中'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('主观负荷 48'), findsOneWidget);
+    expect(store.records.single.perceivedEffort, WorkoutEffort.moderate);
+    expect(store.records.single.subjectiveTrainingLoad, 48);
   });
 }

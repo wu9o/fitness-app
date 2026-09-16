@@ -869,6 +869,7 @@ class SportsDashboardPage extends StatelessWidget {
                           builder: (_) => WorkoutDetailPage(
                             record: record,
                             routeStore: routeStore,
+                            workoutStore: store,
                           ),
                         ),
                       ),
@@ -1331,7 +1332,8 @@ class _TrainingCalendarPageState extends State<TrainingCalendarPage> {
                                   MaterialPageRoute(
                                       builder: (_) => WorkoutDetailPage(
                                           record: record,
-                                          routeStore: widget.routeStore))),
+                                          routeStore: widget.routeStore,
+                                          workoutStore: widget.store))),
                             ),
                         ],
                       ],
@@ -1475,6 +1477,10 @@ class WorkoutWeeklyReportPage extends StatelessWidget {
       for (final type in ActivityType.values)
         type: records.where((record) => record.activity == type).length,
     };
+    final subjectiveLoad = records.fold<int>(
+        0, (total, record) => total + (record.subjectiveTrainingLoad ?? 0));
+    final ratedRecords =
+        records.where((record) => record.perceivedEffort != null).length;
     return Scaffold(
       appBar: AppBar(title: const Text('运动周报')),
       body: MoveaContentFrame(
@@ -1507,6 +1513,22 @@ class WorkoutWeeklyReportPage extends StatelessWidget {
                             label: '户外公里')),
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              color: moveaLavender,
+              child: ListTile(
+                leading:
+                    const Icon(Icons.monitor_heart_outlined, color: moveaBlue),
+                title: const Text('本周主观负荷',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(ratedRecords == 0
+                    ? '在运动总结中标记体感后，这里会形成趋势。'
+                    : '$ratedRecords 次运动已标记体感'),
+                trailing: Text(subjectiveLoad == 0 ? '--' : '$subjectiveLoad',
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w800)),
               ),
             ),
             const SizedBox(height: 16),
@@ -1585,7 +1607,9 @@ class WorkoutWeeklyReportPage extends StatelessWidget {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => WorkoutDetailPage(
-                            record: record, routeStore: routeStore))),
+                            record: record,
+                            routeStore: routeStore,
+                            workoutStore: store))),
                   ),
                 ),
             ],
@@ -1710,6 +1734,41 @@ class WorkoutStatusPage extends StatelessWidget {
     final records = store.records;
     final last = records.isEmpty ? null : records.first;
     final outdoorDistance = store.outdoorDistanceMeters / 1000;
+    final now = DateTime.now();
+    final recentStart = now.subtract(const Duration(days: 7));
+    final previousStart = now.subtract(const Duration(days: 14));
+    final recentRecords = records
+        .where((record) => !record.startedAt.isBefore(recentStart))
+        .toList(growable: false);
+    final previousRecords = records
+        .where((record) =>
+            !record.startedAt.isBefore(previousStart) &&
+            record.startedAt.isBefore(recentStart))
+        .toList(growable: false);
+    int totalLoad(Iterable<WorkoutRecord> values) => values.fold(
+        0, (total, record) => total + (record.subjectiveTrainingLoad ?? 0));
+    final recentLoad = totalLoad(recentRecords);
+    final previousLoad = totalLoad(previousRecords);
+    final ratedCount =
+        recentRecords.where((record) => record.perceivedEffort != null).length;
+    final lastWasHard = last?.perceivedEffort == WorkoutEffort.hard ||
+        last?.perceivedEffort == WorkoutEffort.maximum;
+    final String recoveryTitle;
+    final String recoveryNote;
+    if (recentLoad == 0) {
+      recoveryTitle = '等待运动感受';
+      recoveryNote = '结束运动后标记体感，才能形成个人负荷趋势。';
+    } else if (lastWasHard &&
+        now.difference(last!.startedAt) < const Duration(hours: 24)) {
+      recoveryTitle = '最近一次强度较高';
+      recoveryNote = '下一次可优先安排轻松运动，并结合身体感受决定是否休息。';
+    } else if (previousLoad > 0 && recentLoad > previousLoad * 1.5) {
+      recoveryTitle = '近 7 天负荷上升较快';
+      recoveryNote = '建议保持轻重交替，避免连续安排多次高强度训练。';
+    } else {
+      recoveryTitle = '近期负荷相对稳定';
+      recoveryNote = '继续记录每次体感，趋势会随着真实数据逐步更准确。';
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('运动状态')),
       body: MoveaContentFrame(
@@ -1742,13 +1801,30 @@ class WorkoutStatusPage extends StatelessWidget {
                 note: last == null
                     ? '还没有运动记录'
                     : '${last.startedAt.month} 月 ${last.startedAt.day} 日 · ${formatDuration(last.duration)}'),
+            _StatusCard(
+                icon: Icons.monitor_heart_outlined,
+                title: '近 7 天主观负荷',
+                value: recentLoad == 0 ? '--' : '$recentLoad',
+                note: ratedCount == 0
+                    ? '还没有标记运动感受'
+                    : '$ratedCount 次已评估 · 仅用于个人趋势比较'),
             const SizedBox(height: 12),
-            const Card(
+            Card(
               color: moveaLemon,
               child: ListTile(
-                leading: Icon(Icons.health_and_safety_outlined),
-                title: Text('心率、训练负荷和恢复状态'),
-                subtitle: Text('等待接入 HealthKit 或运动设备数据后再进行计算。'),
+                leading: const Icon(Icons.battery_5_bar_outlined),
+                title: Text(recoveryTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(recoveryNote),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('心率与能量仍等待可信设备数据'),
+                subtitle: Text(
+                    '当前不会根据路线或速度虚构心率；后续由 Apple Watch、HealthKit 或 Health Connect 提供。'),
               ),
             ),
           ],
@@ -1973,7 +2049,9 @@ class HomePage extends StatelessWidget {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => WorkoutDetailPage(
-                              record: record, routeStore: routeStore),
+                              record: record,
+                              routeStore: routeStore,
+                              workoutStore: store),
                         ),
                       ),
                     ),
@@ -2493,6 +2571,7 @@ class _ActivityPageState extends State<ActivityPage> {
         builder: (_) => WorkoutDetailPage(
           record: record,
           routeStore: widget.routeStore,
+          workoutStore: widget.store,
           justCompleted: true,
         ),
       ),
@@ -4774,7 +4853,8 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                             MaterialPageRoute(
                               builder: (_) => WorkoutDetailPage(
                                   record: record,
-                                  routeStore: widget.routeStore),
+                                  routeStore: widget.routeStore,
+                                  workoutStore: widget.store),
                             ),
                           ),
                           leading: CircleAvatar(
@@ -4841,12 +4921,14 @@ class WorkoutDetailPage extends StatelessWidget {
   const WorkoutDetailPage({
     required this.record,
     this.routeStore,
+    this.workoutStore,
     this.justCompleted = false,
     super.key,
   });
 
   final WorkoutRecord record;
   final RouteStore? routeStore;
+  final WorkoutStore? workoutStore;
   final bool justCompleted;
 
   Future<void> _saveAsRoute(BuildContext context) async {
@@ -4998,6 +5080,12 @@ class WorkoutDetailPage extends StatelessWidget {
                         : '不适用'),
                 const _DetailMetric(label: '数据状态', value: '本地已保存'),
               ],
+            ),
+            const SizedBox(height: 18),
+            _WorkoutFeedbackCard(
+              record: record,
+              store: workoutStore,
+              highlighted: justCompleted,
             ),
             const SizedBox(height: 18),
             const MoveaSectionTitle('实际 GPS 轨迹'),
@@ -5245,6 +5333,134 @@ class _QualityMetric extends StatelessWidget {
         Text(label,
             style: const TextStyle(fontSize: 12, color: Colors.black54)),
       ],
+    );
+  }
+}
+
+class _WorkoutFeedbackCard extends StatefulWidget {
+  const _WorkoutFeedbackCard({
+    required this.record,
+    required this.store,
+    required this.highlighted,
+  });
+
+  final WorkoutRecord record;
+  final WorkoutStore? store;
+  final bool highlighted;
+
+  @override
+  State<_WorkoutFeedbackCard> createState() => _WorkoutFeedbackCardState();
+}
+
+class _WorkoutFeedbackCardState extends State<_WorkoutFeedbackCard> {
+  late WorkoutRecord record = widget.record;
+  bool saving = false;
+
+  Future<void> selectEffort(WorkoutEffort effort) async {
+    if (saving) return;
+    final updated = record.copyWith(perceivedEffort: effort);
+    setState(() {
+      record = updated;
+      saving = true;
+    });
+    try {
+      await widget.store?.updateAndPersist(updated);
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('运动感受保存失败，请重试')),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final effort = record.perceivedEffort;
+    final load = record.subjectiveTrainingLoad;
+    final minutes = record.duration.inMilliseconds <= 0
+        ? 0
+        : math.max(1, (record.duration.inMilliseconds / 60000).ceil());
+    return Card(
+      color: widget.highlighted && effort == null ? moveaLemon : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.sentiment_satisfied_alt_outlined,
+                    color: moveaCoral),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    effort == null ? '这次感觉如何？' : '主观强度 · ${effort.label}',
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (saving)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            const Text('选择本次运动的真实体感，用于形成个人负荷趋势。',
+                style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in WorkoutEffort.values)
+                  ChoiceChip(
+                    label: Text(option.label),
+                    selected: effort == option,
+                    onSelected: widget.store == null
+                        ? null
+                        : (_) => selectEffort(option),
+                  ),
+              ],
+            ),
+            if (load != null) ...[
+              const SizedBox(height: 14),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: moveaLavender,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.monitor_heart_outlined,
+                          size: 19, color: moveaBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('主观负荷 $load',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
+                      ),
+                      Text('$minutes 分钟 × 强度 ${effort!.score}',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            const Text('主观负荷仅用于个人趋势比较，不是医疗或专业训练结论。',
+                style: TextStyle(fontSize: 11, color: Colors.black45)),
+          ],
+        ),
+      ),
     );
   }
 }

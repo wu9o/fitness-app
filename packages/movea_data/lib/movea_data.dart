@@ -46,6 +46,8 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
         'completedActions': record.completedActions,
         'plannedActions': record.plannedActions,
         'discardedLocationSamples': record.discardedLocationSamples,
+        if (record.perceivedEffort != null)
+          'perceivedEffort': record.perceivedEffort!.name,
       };
 
   static Map<String, dynamic> _encodePoint(LocationPoint point) => {
@@ -83,6 +85,11 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
         (type) => type.name == activityName,
         orElse: () => ActivityType.run,
       );
+      final effortName = json['perceivedEffort'] as String?;
+      WorkoutEffort? perceivedEffort;
+      for (final effort in WorkoutEffort.values) {
+        if (effort.name == effortName) perceivedEffort = effort;
+      }
       return WorkoutRecord(
         id: json['id'] as String? ??
             DateTime.now().microsecondsSinceEpoch.toString(),
@@ -102,6 +109,7 @@ class SharedPreferencesWorkoutPersistence implements WorkoutPersistence {
         plannedActions: (json['plannedActions'] as num?)?.toInt() ?? 0,
         discardedLocationSamples:
             (json['discardedLocationSamples'] as num?)?.toInt() ?? 0,
+        perceivedEffort: perceivedEffort,
       );
     } on Object {
       return null;
@@ -138,6 +146,15 @@ class WorkoutStore extends ChangeNotifier {
       _records.insert(0, record);
       notifyListeners();
     }
+    await _persistence.write(_records);
+  }
+
+  Future<void> updateAndPersist(WorkoutRecord record) async {
+    if (!_isRestored) await restore();
+    final index = _records.indexWhere((item) => item.id == record.id);
+    if (index < 0) return;
+    _records[index] = record;
+    notifyListeners();
     await _persistence.write(_records);
   }
 

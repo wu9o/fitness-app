@@ -2,6 +2,36 @@ import 'dart:math' as math;
 
 enum ActivityType { run, ride, stretch, strength }
 
+enum WorkoutEffort { easy, moderate, hard, maximum }
+
+extension WorkoutEffortLabel on WorkoutEffort {
+  String get label {
+    switch (this) {
+      case WorkoutEffort.easy:
+        return '轻松';
+      case WorkoutEffort.moderate:
+        return '适中';
+      case WorkoutEffort.hard:
+        return '吃力';
+      case WorkoutEffort.maximum:
+        return '极限';
+    }
+  }
+
+  int get score {
+    switch (this) {
+      case WorkoutEffort.easy:
+        return 2;
+      case WorkoutEffort.moderate:
+        return 4;
+      case WorkoutEffort.hard:
+        return 7;
+      case WorkoutEffort.maximum:
+        return 9;
+    }
+  }
+}
+
 extension ActivityTypeLabel on ActivityType {
   String get label {
     switch (this) {
@@ -46,6 +76,7 @@ class WorkoutRecord {
     this.completedActions = 0,
     this.plannedActions = 0,
     this.discardedLocationSamples = 0,
+    this.perceivedEffort,
   });
 
   final String id;
@@ -59,6 +90,7 @@ class WorkoutRecord {
   final int completedActions;
   final int plannedActions;
   final int discardedLocationSamples;
+  final WorkoutEffort? perceivedEffort;
 
   bool get isTrainingPlanRecord => trainingPlanId != null;
 
@@ -108,6 +140,30 @@ class WorkoutRecord {
     if (accuracy <= 50) return '一般';
     return '较差';
   }
+
+  int? get subjectiveTrainingLoad {
+    final effort = perceivedEffort;
+    if (effort == null) return null;
+    final activeMinutes = duration.inMilliseconds <= 0
+        ? 0
+        : math.max(1, (duration.inMilliseconds / 60000).ceil());
+    return activeMinutes * effort.score;
+  }
+
+  WorkoutRecord copyWith({WorkoutEffort? perceivedEffort}) => WorkoutRecord(
+        id: id,
+        activity: activity,
+        startedAt: startedAt,
+        duration: duration,
+        distanceMeters: distanceMeters,
+        routePoints: routePoints,
+        sourceDevice: sourceDevice,
+        trainingPlanId: trainingPlanId,
+        completedActions: completedActions,
+        plannedActions: plannedActions,
+        discardedLocationSamples: discardedLocationSamples,
+        perceivedEffort: perceivedEffort ?? this.perceivedEffort,
+      );
 }
 
 /// Recoverable snapshot of a workout that has started but has not finished.
