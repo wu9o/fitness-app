@@ -55,7 +55,7 @@ void main() {
     await tester.tap(find.text('运动').last);
     await tester.pumpAndSettle();
     expect(find.text('本周运动概览'), findsOneWidget);
-    await tester.tap(find.text('选择运动'));
+    await tester.tap(find.text('开始运动'));
     await tester.pumpAndSettle();
     expect(find.text('选择今天的运动'), findsOneWidget);
     await tester.tap(find.text('户外跑'));
@@ -143,10 +143,14 @@ void main() {
     await pumpMobile(tester);
     await tester.tap(find.text('运动').last);
     await tester.pumpAndSettle();
+
+    expect(find.text('运动记录'), findsOneWidget);
+    expect(find.text('还没有运动记录'), findsOneWidget);
+    expect(find.text('本周运动概览'), findsOneWidget);
+
     await tester.drag(find.byType(ListView).first, const Offset(0, -420));
     await tester.pumpAndSettle();
 
-    expect(find.text('全部运动记录'), findsOneWidget);
     expect(find.text('训练日历'), findsOneWidget);
     expect(find.text('运动周报'), findsOneWidget);
     expect(find.text('运动状态'), findsOneWidget);
@@ -182,7 +186,7 @@ void main() {
     await pumpMobile(tester);
     await tester.tap(find.text('运动').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('选择运动'));
+    await tester.tap(find.text('开始运动'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('户外骑行'));
     await tester.pump();
@@ -201,7 +205,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('结束'));
     await tester.pump();
-    await tester.tap(find.text('全部运动记录'));
+    expect(find.text('运动记录'), findsOneWidget);
+    await tester.tap(find.text('全部 1 条'));
     await tester.pumpAndSettle();
     expect(find.text('全部运动记录'), findsOneWidget);
     expect(find.text('骑行'), findsNWidgets(2));
@@ -219,7 +224,7 @@ void main() {
     await pumpMobile(tester);
     await tester.tap(find.text('运动').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('选择运动'));
+    await tester.tap(find.text('开始运动'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('户外跑'));
     await tester.pumpAndSettle();
@@ -338,7 +343,7 @@ void main() {
     expect(find.byTooltip('运动'), findsOneWidget);
     await tester.tap(find.byTooltip('运动'));
     await tester.pump(const Duration(milliseconds: 250));
-    await tester.tap(find.text('选择运动'));
+    await tester.tap(find.text('开始运动'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('户外跑'));
     await tester.pump();

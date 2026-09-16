@@ -810,59 +810,71 @@ class SportsDashboardPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
             children: [
-              const Text('运动',
-                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('运动',
+                        style: TextStyle(
+                            fontSize: 30, fontWeight: FontWeight.w800)),
+                  ),
+                  FilledButton.icon(
+                    onPressed: onStart,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('开始运动'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: moveaCoral,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 5),
               const Text('记录每一次训练，看看身体正在变得怎样。',
                   style: TextStyle(color: Colors.black54)),
               const SizedBox(height: 18),
-              Card(
-                color: moveaCoral,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 560;
-                      final copy = Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('开始运动',
-                              style: TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white)),
-                          const SizedBox(height: 5),
-                          const Text('先选择运动类型，再进入对应的准备和记录页面。',
-                              style: TextStyle(color: Colors.white70)),
-                          const SizedBox(height: 14),
-                          FilledButton.icon(
-                            onPressed: onStart,
-                            icon: const Icon(Icons.play_arrow),
-                            label: const Text('选择运动'),
-                            style: FilledButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: moveaCoral),
-                          ),
-                        ],
-                      );
-                      final icon = const Icon(Icons.directions_run,
-                          size: 74, color: Colors.white70);
-                      return compact
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [copy, const SizedBox(height: 8), icon],
-                            )
-                          : Row(
-                              children: [
-                                Expanded(child: copy),
-                                icon,
-                              ],
-                            );
-                    },
+              Row(
+                children: [
+                  const Expanded(child: MoveaSectionTitle('运动记录')),
+                  TextButton(
+                    onPressed: () => openHistory(context),
+                    child: Text(
+                        records.isEmpty ? '查看全部' : '全部 ${records.length} 条'),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 8),
+              if (records.isEmpty)
+                Card(
+                  color: moveaLavender,
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.white,
+                      child: Icon(Icons.route_outlined, color: moveaBlue),
+                    ),
+                    title: const Text('还没有运动记录',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: const Text('点击右上角“开始运动”，完成后会在这里生成记录。'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: onStart,
+                  ),
+                )
+              else
+                for (final record in records.take(3))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _RecentWorkoutCard(
+                      record: record,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => WorkoutDetailPage(
+                            record: record,
+                            routeStore: routeStore,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              const SizedBox(height: 20),
               const MoveaSectionTitle('本周运动概览'),
               const SizedBox(height: 10),
               LayoutBuilder(
@@ -903,24 +915,19 @@ class SportsDashboardPage extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 20),
-              const MoveaSectionTitle('运动数据'),
+              const MoveaSectionTitle('运动分析'),
               const SizedBox(height: 10),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 760 ? 4 : 2;
+                  final columns = constraints.maxWidth >= 760 ? 3 : 1;
                   return GridView.count(
                     crossAxisCount: columns,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
-                    childAspectRatio: columns == 4 ? 2.2 : 1.9,
+                    childAspectRatio: columns == 3 ? 2.2 : 4.2,
                     children: [
-                      _SportsHubLink(
-                          icon: Icons.receipt_long_outlined,
-                          title: '全部运动记录',
-                          subtitle: '${records.length} 条记录',
-                          onTap: () => openHistory(context)),
                       _SportsHubLink(
                           icon: Icons.calendar_month_outlined,
                           title: '训练日历',
@@ -996,35 +1003,6 @@ class SportsDashboardPage extends StatelessWidget {
                                     exerciseStore: exerciseStore,
                                     plan: plan))),
                       ),
-                    ),
-                  ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Expanded(child: MoveaSectionTitle('最近运动')),
-                  if (records.isNotEmpty)
-                    TextButton(
-                        onPressed: () => openHistory(context),
-                        child: const Text('全部记录')),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (records.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Text('完成第一次运动后，这里会显示你的运动记录。'),
-                  ),
-                )
-              else
-                for (final record in records.take(3))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _RecentWorkoutCard(
-                      record: record,
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => WorkoutDetailPage(
-                              record: record, routeStore: routeStore))),
                     ),
                   ),
             ],
