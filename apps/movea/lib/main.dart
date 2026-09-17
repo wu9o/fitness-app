@@ -11,7 +11,9 @@ void main() {
 }
 
 class MoveaApp extends StatefulWidget {
-  const MoveaApp({super.key});
+  const MoveaApp({this.locationRepository, super.key});
+
+  final LocationRepository? locationRepository;
 
   @override
   State<MoveaApp> createState() => _MoveaAppState();
@@ -59,6 +61,7 @@ class _MoveaAppState extends State<MoveaApp> {
           home: MoveaShell(
             key: ValueKey(_dataGeneration),
             onBackupRestored: _reloadAfterBackupRestore,
+            locationRepository: widget.locationRepository,
           ),
         ),
       ),

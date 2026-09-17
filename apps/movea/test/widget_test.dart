@@ -7,6 +7,7 @@ import 'package:movea_data/movea_data.dart';
 import 'package:movea_domain/movea_domain.dart';
 import 'package:movea/main.dart';
 import 'package:movea/src/app.dart';
+import 'package:movea/src/platform/platform_adapters.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:movea/src/exercise_catalog.dart';
@@ -75,11 +76,16 @@ class _GatedActiveWorkoutPersistence implements ActiveWorkoutPersistence {
   }
 }
 
-Future<void> pumpMobile(WidgetTester tester) async {
+Future<void> pumpMobile(
+  WidgetTester tester, {
+  LocationRepository? locationRepository,
+}) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
-  await tester.pumpWidget(const MoveaApp());
+  await tester.pumpWidget(
+    MoveaApp(locationRepository: locationRepository),
+  );
 }
 
 void main() {
@@ -438,6 +444,66 @@ void main() {
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
     expect(find.text('跑步 · 正在记录'), findsNothing);
+  });
+
+  testWidgets('GPS replay drives a real track, pace and saved record',
+      (tester) async {
+    final replay = ReplayLocationRepository(samples: [
+      LocationPoint(
+        latitude: 31.23040,
+        longitude: 121.47370,
+        timestamp: DateTime(2026, 9, 17, 7, 0, 0),
+        accuracy: 5,
+        speedMetersPerSecond: 2.4,
+      ),
+      LocationPoint(
+        latitude: 31.23085,
+        longitude: 121.47370,
+        timestamp: DateTime(2026, 9, 17, 7, 0, 10),
+        accuracy: 5,
+        speedMetersPerSecond: 2.4,
+      ),
+      LocationPoint(
+        latitude: 31.23130,
+        longitude: 121.47370,
+        timestamp: DateTime(2026, 9, 17, 7, 0, 20),
+        accuracy: 5,
+        speedMetersPerSecond: 2.4,
+      ),
+    ]);
+    addTearDown(replay.dispose);
+
+    await pumpMobile(tester, locationRepository: replay);
+    await tester.tap(find.text('运动').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始运动'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('户外跑'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始跑步'));
+    await tester.pump();
+
+    replay.emitAll();
+    await tester.pump();
+
+    await tester.tap(find.text('正在记录 · GPS 轨迹'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('GPS 已定位 · 精度约 5 m'), findsOneWidget);
+    final paceText = find.byWidgetPredicate((widget) {
+      return widget is Text && widget.data?.startsWith('当前配速 ') == true;
+    });
+    expect(paceText, findsOneWidget);
+    expect(tester.widget<Text>(paceText).data, isNot(contains('--')));
+    expect(find.text('0.10 km'), findsOneWidget);
+
+    await tester.tap(find.text('结束'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('运动总结'), findsOneWidget);
+    expect(find.text('0.10 km'), findsOneWidget);
   });
 
   testWidgets('Movea training plans can be opened, edited and started',

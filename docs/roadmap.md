@@ -98,6 +98,16 @@ release. We need deterministic GPS playback, integration tests for workout
 state transitions, screenshot checks for iPhone/iPad/Mac and a release checklist
 that explicitly records signing, privacy, permissions and platform coverage.
 
+### Current increment — P0 is now in progress
+
+The first P0 slice is implemented locally: `MoveaApp` accepts an injected
+location source, `ReplayLocationRepository` replays timestamped samples through
+the same stream used by the geolocator adapter, and a widget test verifies
+non-zero distance, calculated pace, GPS accuracy feedback and saved summary
+data. The same test also caught and fixed a narrow-iPhone metric-card overflow.
+The remaining P0 work is schema versioning, durable high-volume storage,
+broader state-machine coverage and app-surface decomposition.
+
 ## Prioritized delivery plan
 
 Dates are intentionally omitted. A phase exits by evidence, not by a calendar

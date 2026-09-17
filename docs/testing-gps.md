@@ -64,3 +64,18 @@ SPEED=3 INTERVAL=1 \
 仓库同时提供了 [`park-loop.gpx`](../tooling/fixtures/park-loop.gpx)。在 Xcode 中可以把它配置为 Scheme 的 Location Simulation，用于真机连接调试或需要 GPX 文件的测试流程；命令行 Simulator 则使用同一组航点的 [`park-loop.waypoints`](../tooling/fixtures/park-loop.waypoints)。
 
 `flutter test` 和 Simulator 回放解决的是不同问题：前者不应依赖运行中的模拟器，后者才是“不是假画线”的定位验收。
+
+## Deterministic widget replay
+
+For a fast, repeatable check that GPS samples become real workout metrics, run:
+
+```bash
+cd apps/movea
+flutter test test/widget_test.dart --plain-name "GPS replay drives a real track"
+```
+
+The test injects timestamped `LocationPoint` samples through the same
+`LocationRepository` stream used by the geolocator adapter. It verifies a
+non-zero distance, a calculated current pace, GPS accuracy feedback, and a
+saved workout summary. It does not render a pre-drawn route or assert against
+fake counters.

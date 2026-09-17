@@ -60,9 +60,10 @@ class ActivitySessionSnapshot {
 }
 
 class MoveaShell extends StatefulWidget {
-  const MoveaShell({this.onBackupRestored, super.key});
+  const MoveaShell({this.onBackupRestored, this.locationRepository, super.key});
 
   final Future<void> Function()? onBackupRestored;
+  final LocationRepository? locationRepository;
 
   @override
   State<MoveaShell> createState() => _MoveaShellState();
@@ -90,9 +91,10 @@ class _MoveaShellState extends State<MoveaShell> {
     unawaited(planStore.restore());
     if (!_isFlutterTest) unawaited(exerciseStore.load());
     unawaited(routeStore.restore());
-    locationRepository = _isFlutterTest
-        ? UnsupportedLocationRepository()
-        : GeolocatorLocationRepository();
+    locationRepository = widget.locationRepository ??
+        (_isFlutterTest
+            ? UnsupportedLocationRepository()
+            : GeolocatorLocationRepository());
     healthStore = HealthStore(
       repository: _isFlutterTest
           ? UnsupportedHealthRepository()
@@ -6227,7 +6229,9 @@ class WorkoutDetailPage extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              childAspectRatio: 1.8,
+              // Keep metric cards tall enough for two-line values such as
+              // "3.3 min/km" on a narrow iPhone viewport.
+              childAspectRatio: 1.5,
               children: [
                 _DetailMetric(
                     label: '运动时长', value: formatDuration(record.duration)),

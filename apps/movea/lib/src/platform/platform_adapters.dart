@@ -184,6 +184,63 @@ class UnsupportedLocationRepository implements LocationRepository {
   Future<void> stop() async {}
 }
 
+/// Deterministic location source for simulator and widget tests.
+///
+/// The replay never invents distance or pace. Tests provide timestamped
+/// [LocationPoint] samples, then call [emitNext] or [emitAll] after the
+/// activity session has started. This exercises the same stream consumed by
+/// [ActivityPage] as the geolocator adapter, while keeping the test clock and
+/// route data fully reproducible.
+class ReplayLocationRepository implements LocationRepository {
+  ReplayLocationRepository({required Iterable<LocationPoint> samples})
+      : _samples = List.unmodifiable(samples);
+
+  final List<LocationPoint> _samples;
+  final StreamController<LocationPoint> _points =
+      StreamController<LocationPoint>.broadcast();
+  bool _started = false;
+  int _nextIndex = 0;
+
+  @override
+  int get rejectedSampleCount => 0;
+
+  @override
+  void resetRejectedSampleCount() {}
+
+  @override
+  Stream<LocationPoint> get points => _points.stream;
+
+  @override
+  Future<void> start() async {
+    _started = true;
+    _nextIndex = 0;
+  }
+
+  /// Emits one sample from the fixture and returns whether a sample was sent.
+  bool emitNext() {
+    if (!_started || _nextIndex >= _samples.length) return false;
+    _points.add(_samples[_nextIndex++]);
+    return true;
+  }
+
+  /// Emits the remaining fixture samples in their original order.
+  void emitAll() {
+    while (emitNext()) {
+      // The test controls stream delivery with WidgetTester.pump.
+    }
+  }
+
+  @override
+  Future<void> stop() async {
+    _started = false;
+  }
+
+  Future<void> dispose() async {
+    await stop();
+    await _points.close();
+  }
+}
+
 /// Foreground GPS adapter for outdoor workouts.
 ///
 /// The repository emits individual accepted samples instead of exposing the
