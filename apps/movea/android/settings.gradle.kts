@@ -23,7 +23,7 @@ plugins {
     // flutter_inappwebview_android, a transitive maplibre_webview dependency.
     // Keep the app on the latest AGP 8 line until that plugin supports AGP 9.
     id("com.android.application") version "8.11.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 
 include(":app")
