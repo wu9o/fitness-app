@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -704,6 +705,38 @@ void main() {
     expect(envelope['schemaVersion'], MoveaLocalJsonCodec.currentSchemaVersion);
     expect(envelope['data'], isList);
     expect((envelope['data'] as List).single['name'], '旧路线');
+  });
+
+  test('file workout persistence recovers a damaged primary archive', () async {
+    final directory = await Directory.systemTemp.createTemp('movea-storage-');
+    addTearDown(() => directory.delete(recursive: true));
+    final persistence = FileWorkoutPersistence(
+      directoryProvider: () async => directory,
+    );
+    final record = WorkoutRecord(
+      id: 'file-backed-record',
+      activity: ActivityType.run,
+      startedAt: DateTime(2026, 9, 17, 7),
+      duration: const Duration(minutes: 25),
+      distanceMeters: 4200,
+      routePoints: const [
+        LocationPoint(latitude: 31.2304, longitude: 121.4737),
+        LocationPoint(latitude: 31.2322, longitude: 121.4780),
+      ],
+    );
+
+    await persistence.write([record]);
+    final primary = File(
+      '${directory.path}${Platform.pathSeparator}${persistence.storageFileName}',
+    );
+    await primary.writeAsString('{broken archive');
+
+    final restored = await persistence.read();
+    expect(restored, hasLength(1));
+    expect(restored.single.id, record.id);
+    final report = await persistence.inspectIntegrity();
+    expect(report.status, WorkoutDataIntegrityStatus.recoverable);
+    expect(report.recoveryRecordCount, 1);
   });
 
   test('Workout archive rejects a modified payload', () {

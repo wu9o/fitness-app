@@ -108,7 +108,9 @@ data. The same test also caught and fixed a narrow-iPhone metric-card overflow.
 The next slice now adds a version envelope for JSON-backed route, plan and
 active-workout payloads while preserving legacy reads. The remaining P0 work is
 durable high-volume storage, broader state-machine coverage and app-surface
-decomposition.
+decomposition. A file-backed workout store is now available as an injectable
+rollout path with a recoverable archive; it is not the app default until the
+encrypted backup service covers that store too.
 
 ## Prioritized delivery plan
 

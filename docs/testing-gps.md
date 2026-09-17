@@ -79,3 +79,9 @@ The test injects timestamped `LocationPoint` samples through the same
 non-zero distance, a calculated current pace, GPS accuracy feedback, and a
 saved workout summary. It does not render a pre-drawn route or assert against
 fake counters.
+
+The production-facing high-volume option is `FileWorkoutPersistence`. It uses
+the app support directory and keeps a recoverable archive beside the primary
+archive. The current app still defaults to the preferences store until backup
+export/import is wired to both stores, so this rollout cannot silently omit
+workouts from an existing backup.

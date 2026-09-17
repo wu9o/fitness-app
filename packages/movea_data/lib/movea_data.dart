@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:movea_domain/movea_domain.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 export 'src/encrypted_backup.dart';
@@ -331,6 +334,94 @@ class SharedPreferencesWorkoutPersistence
     } on Object {
       return null;
     }
+  }
+}
+
+/// File-backed workout persistence for high-volume GPS histories.
+///
+/// This is intentionally injectable instead of being the default until the
+/// encrypted backup service also reads the file store. That avoids silently
+/// excluding workouts from an existing preferences backup during rollout.
+class FileWorkoutPersistence
+    implements WorkoutPersistence, WorkoutRecoveryPersistence {
+  FileWorkoutPersistence({
+    Future<Directory> Function()? directoryProvider,
+    this.storageFileName = 'movea.workouts.v1.json',
+    this.recoveryFileName = 'movea.workouts.recovery.v1.json',
+  }) : _directoryProvider = directoryProvider ?? getApplicationSupportDirectory;
+
+  final Future<Directory> Function() _directoryProvider;
+  final String storageFileName;
+  final String recoveryFileName;
+  static const _archiveCodec = WorkoutArchiveCodec();
+
+  Future<File> _file(String name) async {
+    final directory = await _directoryProvider();
+    await directory.create(recursive: true);
+    return File(path.join(directory.path, name));
+  }
+
+  Future<String?> _readFile(String name) async {
+    try {
+      return await (await _file(name)).readAsString();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  @override
+  Future<List<WorkoutRecord>> read() async {
+    final primary = _archiveCodec.decode(await _readFile(storageFileName));
+    if (primary.isValid) return primary.records;
+    final recovery = _archiveCodec.decode(await _readFile(recoveryFileName));
+    return recovery.isValid ? recovery.records : const [];
+  }
+
+  @override
+  Future<void> write(List<WorkoutRecord> records) async {
+    final archive = _archiveCodec.encode(records);
+    final primary = await _file(storageFileName);
+    final recovery = await _file(recoveryFileName);
+    // Keep a recoverable copy beside the primary file. A later database
+    // migration can replace this with a transactional journal.
+    await recovery.writeAsString(archive, flush: true);
+    await primary.writeAsString(archive, flush: true);
+  }
+
+  @override
+  Future<WorkoutDataIntegrityReport> inspectIntegrity() async {
+    final primary = _archiveCodec.decode(await _readFile(storageFileName));
+    final recovery = _archiveCodec.decode(await _readFile(recoveryFileName));
+    if (!primary.isValid && !recovery.isValid) {
+      return const WorkoutDataIntegrityReport(
+        status: WorkoutDataIntegrityStatus.empty,
+        primaryRecordCount: 0,
+        invalidPrimaryRecordCount: 0,
+        recoveryRecordCount: 0,
+      );
+    }
+    if (primary.isValid) {
+      return WorkoutDataIntegrityReport(
+        status: WorkoutDataIntegrityStatus.healthy,
+        primaryRecordCount: primary.records.length,
+        invalidPrimaryRecordCount: 0,
+        recoveryRecordCount: recovery.isValid ? recovery.records.length : 0,
+      );
+    }
+    return WorkoutDataIntegrityReport(
+      status: recovery.isValid
+          ? WorkoutDataIntegrityStatus.recoverable
+          : WorkoutDataIntegrityStatus.corrupt,
+      primaryRecordCount: 0,
+      invalidPrimaryRecordCount: 1,
+      recoveryRecordCount: recovery.isValid ? recovery.records.length : 0,
+    );
+  }
+
+  @override
+  Future<List<WorkoutRecord>?> readRecoverySnapshot() async {
+    final result = _archiveCodec.decode(await _readFile(recoveryFileName));
+    return result.isValid ? result.records : null;
   }
 }
 
