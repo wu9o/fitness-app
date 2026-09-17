@@ -8,6 +8,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 export 'src/encrypted_backup.dart';
 
+/// Version envelope for JSON-backed local records.
+///
+/// Older preview builds stored route, plan and active-workout payloads as raw
+/// JSON arrays/maps. [decode] intentionally accepts that legacy shape, while
+/// every new write uses an explicit schema version so future migrations can be
+/// staged without guessing which fields a payload contains.
+class MoveaLocalJsonCodec {
+  const MoveaLocalJsonCodec._();
+
+  static const currentSchemaVersion = 1;
+
+  static String encode(Object value) =>
+      jsonEncode({'schemaVersion': currentSchemaVersion, 'data': value});
+
+  static dynamic decode(String payload) {
+    final decoded = jsonDecode(payload);
+    if (decoded is! Map || !decoded.containsKey('schemaVersion')) {
+      return decoded;
+    }
+    final version = (decoded['schemaVersion'] as num?)?.toInt();
+    if (version != currentSchemaVersion) {
+      throw FormatException('unsupported local schema: $version');
+    }
+    return decoded['data'];
+  }
+}
+
 abstract interface class WorkoutPersistence {
   Future<List<WorkoutRecord>> read();
   Future<void> write(List<WorkoutRecord> records);
@@ -593,7 +620,9 @@ class SharedPreferencesActiveWorkoutPersistence
     final payload = preferences.getString(storageKey);
     if (payload == null) return null;
     try {
-      final json = jsonDecode(payload) as Map<String, dynamic>;
+      final json = Map<String, dynamic>.from(
+        MoveaLocalJsonCodec.decode(payload) as Map,
+      );
       final activityName = json['activity'] as String? ?? 'run';
       final activity = ActivityType.values.firstWhere(
         (type) => type.name == activityName,
@@ -626,7 +655,7 @@ class SharedPreferencesActiveWorkoutPersistence
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
       storageKey,
-      jsonEncode({
+      MoveaLocalJsonCodec.encode({
         'activity': draft.activity.name,
         'startedAt': draft.startedAt.toIso8601String(),
         'updatedAt': draft.updatedAt.toIso8601String(),
@@ -716,7 +745,7 @@ class SharedPreferencesRoutePersistence implements RoutePersistence {
     final payload = preferences.getString(storageKey);
     if (payload == null) return const [];
     try {
-      final decoded = jsonDecode(payload) as List<dynamic>;
+      final decoded = MoveaLocalJsonCodec.decode(payload) as List<dynamic>;
       return decoded
           .whereType<Map<String, dynamic>>()
           .map(_decodeRoute)
@@ -732,7 +761,9 @@ class SharedPreferencesRoutePersistence implements RoutePersistence {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
       storageKey,
-      jsonEncode(routes.map(_encodeRoute).toList(growable: false)),
+      MoveaLocalJsonCodec.encode(
+        routes.map(_encodeRoute).toList(growable: false),
+      ),
     );
   }
 
@@ -898,7 +929,7 @@ class SharedPreferencesTrainingPlanPersistence
     final payload = preferences.getString(storageKey);
     if (payload == null) return const [];
     try {
-      final decoded = jsonDecode(payload) as List<dynamic>;
+      final decoded = MoveaLocalJsonCodec.decode(payload) as List<dynamic>;
       return decoded
           .whereType<Map<String, dynamic>>()
           .map(_decodePlan)
@@ -914,7 +945,9 @@ class SharedPreferencesTrainingPlanPersistence
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
       storageKey,
-      jsonEncode(plans.map(_encodePlan).toList(growable: false)),
+      MoveaLocalJsonCodec.encode(
+        plans.map(_encodePlan).toList(growable: false),
+      ),
     );
   }
 

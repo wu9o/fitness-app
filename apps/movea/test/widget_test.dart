@@ -670,6 +670,42 @@ void main() {
     expect(restored.records.single.heartRateSamples.last.bpm, 145);
   });
 
+  test('local JSON persistence reads legacy data and writes a version envelope',
+      () async {
+    final legacyRoute = jsonEncode([
+      {
+        'id': 'legacy-route',
+        'name': '旧路线',
+        'distanceMeters': 1200,
+        'isSaved': true,
+        'estimatedMinutes': 10,
+        'elevationMeters': 12,
+        'tags': ['迁移测试'],
+        'points': [
+          {'latitude': 31.2304, 'longitude': 121.4737},
+          {'latitude': 31.2310, 'longitude': 121.4737},
+        ],
+      },
+    ]);
+    SharedPreferences.setMockInitialValues({
+      SharedPreferencesRoutePersistence.storageKey: legacyRoute,
+    });
+
+    final persistence = SharedPreferencesRoutePersistence();
+    final routes = await persistence.read();
+    expect(routes, hasLength(1));
+    expect(routes.single.name, '旧路线');
+
+    await persistence.write(routes);
+    final preferences = await SharedPreferences.getInstance();
+    final envelope = jsonDecode(
+      preferences.getString(SharedPreferencesRoutePersistence.storageKey)!,
+    ) as Map<String, dynamic>;
+    expect(envelope['schemaVersion'], MoveaLocalJsonCodec.currentSchemaVersion);
+    expect(envelope['data'], isList);
+    expect((envelope['data'] as List).single['name'], '旧路线');
+  });
+
   test('Workout archive rejects a modified payload', () {
     final record = WorkoutRecord(
       id: 'archive-checksum',

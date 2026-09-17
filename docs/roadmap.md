@@ -105,8 +105,10 @@ location source, `ReplayLocationRepository` replays timestamped samples through
 the same stream used by the geolocator adapter, and a widget test verifies
 non-zero distance, calculated pace, GPS accuracy feedback and saved summary
 data. The same test also caught and fixed a narrow-iPhone metric-card overflow.
-The remaining P0 work is schema versioning, durable high-volume storage,
-broader state-machine coverage and app-surface decomposition.
+The next slice now adds a version envelope for JSON-backed route, plan and
+active-workout payloads while preserving legacy reads. The remaining P0 work is
+durable high-volume storage, broader state-machine coverage and app-surface
+decomposition.
 
 ## Prioritized delivery plan
 
