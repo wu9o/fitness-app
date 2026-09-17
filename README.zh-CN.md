@@ -103,13 +103,15 @@ movea/
 
 ## 下一阶段
 
-1. 完成 Apple Watch 配对真机运动验证；
-2. 强化真实设备上的 GPS 记录和路线引导；
-3. 接入 Android Health Connect 与平台定位；
-4. 完成 GitHub 加密备份的冲突处理和恢复体验；
-5. 持续推进无障碍、多语言、性能和各端视觉走查。
+当前顺序会收敛为：
 
-完整规划见 [docs/roadmap.md](docs/roadmap.md)。
+1. 稳定本地数据模型、GPS 回放工具和运动状态测试；
+2. 完成真机上的可信户外记录与路线跟随；
+3. 完成可复用动作库和训练计划执行器；
+4. 再扩展 Health Connect、Apple Watch、iPad、Mac 和 GitHub 加密备份。
+
+完整状态边界、依赖关系、验收标准和明确不做项见
+[docs/roadmap.md](docs/roadmap.md)。
 
 ## 隐私与安全
 

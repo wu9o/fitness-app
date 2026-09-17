@@ -1,102 +1,293 @@
-# Movea 建设路线图
+# Movea Product & Engineering Roadmap
 
-Movea 当前已经有跨端 Flutter 外壳、MapLibre 地图、运动控制面板、本地运动记录和训练计划模板。
-下一阶段不再只扩充静态页面，而是围绕“记录 → 解释 → 复用 → 同步”建立完整闭环。
+> Status date: 2026-09-17 · baseline: `main` at `870c5a5`
 
-## 当前阶段：数据可解释性（已开始落地）
+Movea is a personal, local-first activity and health companion. The product is
+not trying to become a social network or a subscription service. Its main job
+is to make a personal record trustworthy, explainable and reusable across
+devices.
 
-目标是让用户可以看懂一次运动和一晚睡眠，而不是只看到一个数字。
+## The decision that governs the roadmap
 
-- 首页增加睡眠、体重、静息心率、步数入口
-- 健康页增加睡眠时段、睡眠阶段、清醒时长和恢复提示
-- 运动记录支持进入详情页，查看时长、距离、配速和数据状态
-- 路线支持保存、我的路线、路线详情和明确的跟随路线入口
-- 从路线进入运动页时展示计划路线；普通开始运动不展示虚假轨迹
-- 已接入 iOS/iPadOS 前台 GPS：权限、定位服务检查、采样过滤、实时轨迹和距离累计
-- 运动记录会保存真实 GPS 点；历史详情在采集到足够点位时展示轨迹缩略图
-- 跟随路线时叠加“计划路线 + 实际轨迹”，显示沿线进度、偏离距离和定位状态
-- 运动详情可以给真实轨迹命名并保存到“我的路线”，下一次继续跟随
-- 路线引导按计划路线线段计算当前位置和进度，避免只按最近顶点跳变
-- 跟随路线时根据当前线段计算下一个明显转向、距离和剩余里程，地图内展示偏航警告、计划/实际图例和重新定位入口
-- GPS 采样保留速度、海拔和精度；运动中展示当前配速与定位精度
-- 运动详情展示平均速度、累计爬升、GPS 点位和数据状态
-- 结束运动后先确认本地持久化，再进入运动总结；总结包含路线、分段配速和保存为路线入口
-- 运动总结展示 GPS 有效点、平均精度、已过滤采样数和质量等级，避免把异常跳点混入距离
-- 运动总结支持标记轻松、适中、吃力或极限体感，并以“有效分钟 × 主观强度”形成个人负荷分
-- 所有演示数据与真实平台数据明确区分
-- 运动中心增加全部记录、训练日历、周报和运动状态入口
-- 训练日历支持月份切换、日期点选和当天运动详情
-- 运动周报支持每日运动时长柱状图、运动类型分布和本周记录跳转
-- 运动周报汇总已标记体感的主观负荷；运动状态展示近 28 天周趋势并给出轻重交替提示
-- 训练计划支持每周排期，日历区分计划日与已完成运动
-- 训练执行记录关联具体计划，保存动作完成数与计划总动作数
-- 健康数据统一经过 `HealthStore`，页面显示数据来源和刷新状态，不再把演示值伪装成设备同步
-- iOS 已加入 HealthKit 只读桥接：睡眠阶段、体重、步数、静息心率和最近 30 天设备运动通过原生查询转换为共享领域模型
-- 设备运动采用“先预览、后导入”，按 HealthKit UUID 去重；只展示来源真实提供的心率、能量和距离
-- HealthKit 关联心率采样支持增量同步和详情曲线；未配置训练参数时显示固定 bpm 分布，配置最大心率后切换为个性化 5 区
-- 设置页支持本地保存最大心率，并在保存前预览恢复、轻松、有氧、阈值和高强区间
-- 无 HealthKit、未授权或暂未接入 Android Health Connect 时，健康页保留明确的“演示数据”降级状态
-- iOS 户外运动启用 `location` Background Mode，锁屏或切换应用后继续接收定位，并显示系统后台定位提示
-- 正在进行的运动保存为独立草稿；异常退出后可恢复路线、距离和已用时，恢复时默认暂停，避免把离线间隔误算为运动时长
-- 路线跟随将连续 GPS 状态转换为一次性提醒事件，转向、偏航、返回路线和到达终点支持可独立开关的系统触觉与中文语音反馈
-- 本地运动记录维护带 SHA-256 校验的恢复快照；主存储损坏时优先读取完整快照，设置页支持诊断和确认修复
-- Watch 原生协调器已接入 `HKWorkoutSession`、`HKLiveWorkoutBuilder`、实时心率/距离/能量和后台摘要补传；等待绑定正式 target 后真机验收
+We will build Movea in this order:
 
-## 下一阶段：运动数据质量与路线引导增强
-
-记录和路线复用的第一版已经打通，下一步要把采样质量、恢复能力和健康数据补完整。
-
-1. iPhone/iPad：HealthKit 健康快照和设备运动导入已接入；Watch 端真实运动会话和摘要队列已实现，下一步创建正式 watchOS target 并真机验证权限矩阵
-2. iPhone：后台运动定位与锁屏持续记录已接入，下一步补真机功耗、系统回收和长时间稳定性验证
-3. 分段配速、主观负荷、HealthKit 心率曲线、活动能量和个体化心率 5 区已接入；下一步补充静息心率法和区间设置来源说明
-4. 跟随路线已加入重新定位、下一段方向、偏航提示、“计划/实际”图例，以及可独立开关的触觉和中文语音提醒；下一步补真机音频打断、蓝牙耳机和触觉验证
-5. 已生成“摘要 + 原始采样 + 采样质量”的可恢复记录，并加入校验快照和损坏恢复；设置页已支持 AES-256-GCM 加密文件导出、清单预检和二次确认恢复，下一步增加多设备合并
-6. Android：以 Health Connect 和 Fused Location 对齐共享领域模型
-
-验收标准：关闭网络仍能开始和结束运动；无定位权限时能给出明确降级提示；真实数据和演示数据不会混在同一条记录里。
-
-## 再下一阶段：训练与内容闭环
-
-- 路线详情已补充距离、预计时长、爬升、难度、路线形式、参考配速和补水建议；下一步接入带坐标的补水点与真实海拔剖面
-- 训练计划增加连续训练、动作历史和负荷趋势
-- 学习内容增加动作详情、注意事项、适用人群和关联计划
-
-验收标准：用户可以从历史运动保存路线，下一次从路线页或运动页开始跟随，并能在中断后恢复。
-
-## 多设备阶段：Watch、iPad、Mac
-
-- Apple Watch 独立 Workout Session：开始、暂停、继续、结束、距离、时长、心率
-- Watch 与 iPhone 使用 Watch Connectivity 合并记录，断连后自动补传
-- iPad 使用分栏布局同时查看记录、路线和健康趋势
-- Mac 提供键鼠友好的历史分析、筛选、导出和备份恢复
-
-验收标准：Watch 无需持续连接 iPhone 也能完成运动；回到 iPhone 后不会产生重复记录。
-
-## 数据安全阶段：加密备份与恢复
-
-- 设备端生成加密备份包，GitHub 私密仓库只保存密文
-- 加密备份包采用口令派生密钥和 AES-256-GCM，口令不写入设备、日志或备份文件
-- 导入前先解密并展示运动、路线和训练计划清单，确认后才覆盖或合并本地数据
-- Token 放在 Keychain/Keystore，不进入代码、日志或备份包
-- 使用 manifest、幂等 ID 和版本号处理多设备合并
-- 提供“备份状态、最近同步、冲突待处理、导出/恢复”设置页
-
-验收标准：用户可以在新设备上验证身份、恢复本地数据；备份仓库泄露时无法直接读取健康和运动明文。
-
-## 当前不做
-
-- 会员、订阅、社交排行榜和公开社区
-- 把 GitHub 私密仓库当成实时数据库
-- 把计划路线误标成真实运动轨迹
-- 在没有权限和隐私说明前自动读取 HealthKit/Health Connect
-
-## 推荐执行顺序
-
-```text
-前台 GPS 记录与路线引导
-  -> 路线保存与跟随
-  -> HealthKit / Health Connect 健康数据
-  -> 运动/睡眠详情的数据闭环
-  -> Watch / Android / iPad / Mac 适配
-  -> 加密 GitHub 备份与恢复
+```mermaid
+flowchart LR
+  A[Trustworthy local record] --> B[Reusable routes and training plans]
+  B --> C[Health and recovery context]
+  C --> D[Watch, Android, iPad and Mac]
+  D --> E[Encrypted GitHub backup]
+  A -. requires .-> F[Release and test foundation]
+  F -. enables every phase .-> B
 ```
+
+The next feature is accepted only when it strengthens one of these links and
+has a testable exit condition. This prevents the activity page, route page,
+health page and training page from growing as unrelated demos.
+
+## Where the repository is now
+
+The following is verified from the current code and repository, not a future
+proposal:
+
+| Area | Current baseline | Confidence boundary |
+| --- | --- | --- |
+| Product shell | Flutter app with Today, Sports, Health, Routes and Learn navigation; responsive wide layout exists | iPhone is the primary validated surface; iPad and Mac still need dedicated visual QA |
+| Outdoor activity | Run, ride, stretch and strength activity types; activity picker; pause/resume/finish flow; active workout draft recovery | Long-running real-device, lock-screen and low-power behavior still needs validation |
+| GPS and route guidance | Core Location-compatible Flutter adapter, accepted GPS points, distance/pace derivation, planned-vs-actual track, off-route and turn cues | Android and Watch platform behavior is not proven end to end |
+| Maps | MapLibre with a controlled OpenFreeMap/OpenMapTiles style and route overlays | Public tile availability, coverage, caching and long-term service terms are still operational risks |
+| Sports hub | Workout records, training calendar, weekly report, training status and device-workout import entry points | Analytics are mostly local summaries; there is no durable trend/insight contract yet |
+| Routes | Recommended, nearby and saved-route views; route detail; select, cancel and follow states | Route import/export, offline route packages and robust route editing are not complete |
+| Training | 302 exercise definitions and 906 bundled illustration frames; plan editor, work/rest settings and plan runner | Content provenance, progression rules, comprehensive exercise QA and history are incomplete |
+| Health | Shared `HealthSnapshot`; iOS HealthKit bridge for sleep, weight, steps, resting heart rate and device workouts; source labels and sleep detail UI | Android Health Connect is not implemented; health snapshots and raw sleep segments are not yet a durable local dataset |
+| Local data | SharedPreferences stores workout, route, plan and recovery data; AES-256-GCM file backup/import and integrity snapshot exist | SharedPreferences is not sufficient for large GPS/health histories; GitHub remote backup is not implemented |
+| Apple Watch | Native HealthKit workout coordinator and Watch Connectivity inbox source exists | No formal watchOS target, signed companion build or paired-device acceptance yet |
+| Authentication | No GitHub sign-in or account/session flow is implemented | Required before a GitHub private-backup workflow can be safely shipped |
+| Delivery | Flutter CI and App Builds are green; `v0.1.1` Preview Release has Android, iOS Simulator and macOS attachments | Android is development-signed, iOS is Simulator-only, and macOS is unsigned/not notarized |
+
+## The gaps that matter most
+
+The current risk is not a shortage of screens. It is that several screens can
+look complete while the underlying data contract and platform behavior remain
+partial.
+
+### 1. The local data foundation is too small for the product goal
+
+Workout summaries, routes and plans currently have persistence boundaries, but
+GPS samples, heart-rate samples, sleep segments and sync metadata need a more
+durable model. Long traces should not depend on one large preferences value.
+The application also needs stable identifiers, source provenance, schema
+versions, soft deletion and an explicit distinction between a local GPS record,
+a HealthKit import and a manual entry.
+
+### 2. GitHub backup has a contract but no complete product path
+
+Movea currently supports local encrypted file export/import. The
+`BackupRepository` interface is not a GitHub implementation. Missing pieces
+include GitHub authentication, private-repository bootstrap or selection,
+least-privilege token storage, encrypted shard upload, manifest versioning,
+conflict handling and restore preview. GitHub must remain an encrypted backup
+target, never the live database.
+
+### 3. The multi-platform promise is ahead of its acceptance evidence
+
+Flutter provides a shared application surface, but the platform-specific work
+is not interchangeable. Android needs Health Connect and location validation;
+Apple Watch needs a formal target and paired-device testing; iPad needs a
+split-view information hierarchy; Mac needs keyboard, window-size and desktop
+navigation checks.
+
+### 4. The map is visually controlled but operationally dependent
+
+MapLibre lets Movea control label density, colors and route emphasis. That
+solves the visual problem, but not tile hosting, offline availability, cache
+policy, attribution, coverage or rate limits. A self-hosted PMTiles/OpenMapTiles
+option needs to be designed before the map becomes a critical offline feature.
+
+### 5. The training library needs product rules, not only more illustrations
+
+The exercise catalog is now a real asset, but the training system still needs
+content metadata, muscle/equipment/skill filters, safety notes, progression,
+plan history and a consistent execution contract. Every imported asset also
+needs its license and attribution to remain traceable.
+
+### 6. Release and visual QA need to become repeatable
+
+The repository now produces a downloadable preview, but it is not a store
+release. We need deterministic GPS playback, integration tests for workout
+state transitions, screenshot checks for iPhone/iPad/Mac and a release checklist
+that explicitly records signing, privacy, permissions and platform coverage.
+
+## Prioritized delivery plan
+
+Dates are intentionally omitted. A phase exits by evidence, not by a calendar
+promise. Work inside a phase can be split into small pull requests.
+
+### P0 — Stabilize the foundation
+
+**Objective:** make the current product maintainable and every future feature
+observable.
+
+- Split the 7,888-line application surface into feature areas: shell, sports,
+  activity session, routes, training, health, settings and shared map UI.
+- Define a versioned local data schema for workout records, GPS samples, routes,
+  plans, sleep segments, health measurements and sync metadata.
+- Migrate high-volume records away from a single preferences payload to a
+  durable cross-platform local store; keep an export codec for recovery.
+- Add a fake `LocationRepository` and deterministic GPX replay harness using
+  `tooling/fixtures/park-loop.gpx`.
+- Add state-machine tests for ready → recording → paused → resumed → finished,
+  route selected → cancelled → replaced, and recovered draft → paused.
+- Align `pubspec.yaml` version metadata with the release tag and make the
+  release workflow verify the version before publishing.
+
+**Exit criteria:** a replayed route produces the same distance, pace, GPS
+quality and guidance events on every run; a process restart can recover a
+paused draft; a schema migration can be tested without deleting local data.
+
+### P1 — Make outdoor activity trustworthy
+
+**Objective:** complete the core promise: record a real activity and reuse a
+route without confusing planned and actual data.
+
+- Add a clear preparation state: location permission, service status, GPS
+  accuracy, selected activity and optional selected route.
+- Keep ordinary “Start” free of any route until the user explicitly chooses
+  one; render planned route, actual track and current position as separate
+  layers and legends.
+- Complete route selection, cancellation, replacement, recentering and
+  “follow this route” behavior from both the route library and sports hub.
+- Persist raw samples with accuracy, speed, altitude and timestamps; derive
+  distance, current/average pace, elevation gain and data quality from them.
+- Add finish review: map, split pace, quality summary, perceived effort, save
+  as route, rename and delete/keep decisions.
+- Validate foreground, background, lock-screen, permission denial, GPS loss,
+  low-power mode and simulator playback on iPhone; then repeat the contract on
+  Android.
+
+**Exit criteria:** no fake track appears before recording; a route-following
+activity visibly distinguishes plan from actual movement; an interrupted
+activity can resume without inventing elapsed time or distance.
+
+### P2 — Turn the exercise library into a training system
+
+**Objective:** make a plan reusable, understandable and executable.
+
+- Add catalog filters for movement pattern, muscle group, equipment, skill and
+  training goal, plus search and favorites.
+- Complete exercise detail: animation/frames, setup, steps, breathing, common
+  mistakes, safety notes and related exercises.
+- Make plan templates first-class: action order, work duration, repetitions,
+  sets, action rest, round rest, rounds, difficulty and scheduled days.
+- Add plan version/history so editing a template does not rewrite completed
+  sessions.
+- Make the runner a real state machine with action countdown, rest countdown,
+  pause/resume, skip, previous/next, audio/haptic cues and completed-set
+  persistence.
+- Preserve Workout Guide license and attribution metadata with every bundled
+  asset and document any future content source.
+
+**Exit criteria:** a user can create a plan, run it from start to finish,
+open an individual action demonstration during execution, resume after leaving
+the screen and see the completed session in the sports history.
+
+### P3 — Build health and recovery as a traceable dataset
+
+**Objective:** turn health from a dashboard of values into a source-aware
+context for activity decisions.
+
+- Persist health snapshots and raw/normalized measurements with source,
+  timestamp, unit and permission state.
+- Complete iOS HealthKit flows for sleep stages, sleep intervals, wake periods,
+  weight, steps, resting heart rate and device workouts with incremental sync
+  and de-duplication.
+- Implement Android Health Connect adapters behind the same domain contracts.
+- Add manual entry for weight and perceived recovery when no platform source
+  is available; never silently replace missing data with demo values.
+- Expand sleep detail to show bedtime, wake time, total sleep, awake periods,
+  deep/core/REM stages, data gaps and source freshness.
+- Add recovery trends and simple personal comparisons; avoid medical diagnoses
+  or unsupported readiness scores.
+
+**Exit criteria:** every health value has a source and timestamp; permission
+denial is visible; iOS and Android adapters produce the same shared model; a
+sleep detail view can be reconstructed from persisted data offline.
+
+### P4 — Deliver the platform promise
+
+**Objective:** make each supported device useful for its own job.
+
+- Create the formal watchOS target, capabilities, HealthKit usage text and
+  Watch Connectivity integration.
+- Validate Watch-only start/pause/resume/finish, live duration/distance/heart
+  rate, offline operation and delayed transfer to iPhone without duplicates.
+- Add iPad split-view layouts for sports records + detail, routes + route
+  detail, and health trends + sleep detail.
+- Add Mac window-size breakpoints, keyboard focus/order, desktop navigation,
+  filtering, export and backup/restore workflows.
+- Add platform permission and visual QA matrices for iPhone, iPad, Mac,
+  Android and Watch.
+
+**Exit criteria:** each platform has a documented supported workflow; Watch can
+complete an activity without an active iPhone connection; returning data is
+merged once; iPad and Mac do not reuse a phone-sized layout.
+
+### P5 — Ship encrypted GitHub backup and recovery
+
+**Objective:** give the personal user a safe, optional, multi-device backup
+without turning GitHub into an online database.
+
+- Implement native-app GitHub sign-in and store session credentials only in
+  Keychain/Keystore; request the smallest repository permissions possible.
+- Add a settings flow to connect an existing private repository or create a
+  dedicated private backup repository after explicit confirmation.
+- Encrypt before upload with the existing envelope design; keep passwords and
+  plaintext health/activity payloads out of logs and repository metadata.
+- Upload versioned encrypted shards plus a manifest with device ID, schema
+  version, record IDs and checksums; make retries idempotent.
+- Download and verify before displaying a restore preview; support merge,
+  conflict review, rollback and missing-device recovery.
+- Show backup state, last successful sync, pending changes, conflicts and
+  recoverability in Settings.
+
+**Exit criteria:** a second device can authenticate, download ciphertext,
+preview the decrypted manifest and restore selected data; duplicate uploads
+do not duplicate records; a repository viewer cannot read health or route
+content.
+
+### P6 — Harden maps, distribution and operations
+
+**Objective:** make the app dependable outside the development machine.
+
+- Evaluate OpenFreeMap service limits and coverage against the intended regions.
+- Add a PMTiles/OpenMapTiles self-hosted option, offline region download,
+  cache expiry and attribution checks.
+- Add GPX import/export with privacy confirmation and route simplification
+  that does not alter the recorded workout source.
+- Add release channels: internal preview, public prerelease and signed store
+  release; keep signing credentials outside the repository.
+- Add crash-safe migration tests, large-history performance checks, accessibility
+  checks, localization checks and release artifact integrity checks.
+
+**Exit criteria:** a documented map provider decision exists; a route can be
+viewed and followed in the supported offline scenario; each public release
+identifies its signing and platform limitations.
+
+## The next three engineering increments
+
+The immediate line of work should be:
+
+1. **Foundation hardening:** split the app surface, version the local schema,
+   add deterministic GPS replay and state-machine tests.
+2. **Outdoor activity completion:** finish the real-recording contract,
+   route-selection states, finish review and iPhone background/lock-screen QA.
+3. **Training system completion:** make the exercise catalog searchable and
+   make plan execution persistable, including action-level demonstrations.
+
+Health Connect, Watch connectivity and GitHub backup follow this order because
+they depend on stable local records and mergeable identifiers. They should not
+be used to hide gaps in the primary recording flow.
+
+## Explicitly out of scope
+
+- Membership, subscriptions, paid content or a social feed
+- Public route sharing, leaderboards or follower mechanics
+- Treating GitHub as a live database or storing plaintext health data there
+- Fabricating GPS, heart-rate, sleep or calorie values when a source is absent
+- Medical diagnosis, treatment recommendations or clinical readiness claims
+- Shipping an unsigned development artifact as an App Store or Play Store release
+
+## Release gates
+
+Every phase must answer these questions before it is considered complete:
+
+1. Can the feature work offline where its product promise requires it?
+2. Can the user tell real, demo, manual and imported data apart?
+3. Can the data be recovered after interruption or migration?
+4. Has the behavior been tested on the platform named by the phase?
+5. Are permissions, privacy implications, attribution and signing status documented?
+
+The current public `v0.1.1` is a development preview. The next meaningful
+product milestone is not a larger version number; it is a verified P0/P1
+recording foundation with evidence from deterministic replay and real-device
+validation.

@@ -139,15 +139,15 @@ movea/
 
 ## Roadmap
 
-Near-term work focuses on:
+The current sequence is deliberately narrower than the full feature list:
 
-1. paired-device validation for the Apple Watch workout flow;
-2. more robust GPS recording and route guidance on real devices;
-3. platform-native health adapters for Android;
-4. encrypted GitHub backup conflict handling and recovery UX;
-5. accessibility, localization, performance, and platform-specific visual QA.
+1. stabilize the local data schema, GPS replay harness, and workout state tests;
+2. finish trustworthy outdoor recording and route-following on real devices;
+3. complete the reusable exercise library and training-plan runner;
+4. then expand Health Connect, Apple Watch, iPad, Mac, and encrypted GitHub backup.
 
-See [the detailed roadmap](docs/roadmap.md) for the current engineering sequence.
+See [the detailed roadmap](docs/roadmap.md) for status boundaries, dependencies,
+exit criteria, and explicit out-of-scope decisions.
 
 ## Privacy and security
 
