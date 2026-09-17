@@ -30,13 +30,13 @@ class EncryptedBackupManifest {
   final int preferenceCount;
 
   Map<String, dynamic> toJson() => {
-    'createdAt': createdAt.toUtc().toIso8601String(),
-    'workoutCount': workoutCount,
-    'routeCount': routeCount,
-    'trainingPlanCount': trainingPlanCount,
-    'includesTrainingProfile': includesTrainingProfile,
-    'preferenceCount': preferenceCount,
-  };
+        'createdAt': createdAt.toUtc().toIso8601String(),
+        'workoutCount': workoutCount,
+        'routeCount': routeCount,
+        'trainingPlanCount': trainingPlanCount,
+        'includesTrainingProfile': includesTrainingProfile,
+        'preferenceCount': preferenceCount,
+      };
 
   static EncryptedBackupManifest fromJson(Map<String, dynamic> json) {
     return EncryptedBackupManifest(
@@ -61,16 +61,27 @@ class DecryptedMoveaBackup {
   final Map<String, dynamic> preferences;
 }
 
+/// Optional high-volume workout archive used by the file-backed local store.
+///
+/// The backup package deliberately depends on this small capability instead
+/// of the concrete persistence implementation. That keeps the encrypted
+/// envelope independent from path_provider and makes it possible to test the
+/// backup flow with a temporary directory.
+abstract interface class EncryptedBackupWorkoutStore {
+  Future<String?> readWorkoutArchive();
+  Future<void> writeWorkoutArchive(String archive);
+  Future<void> clearWorkoutArchive();
+}
+
 class EncryptedBackupCodec {
   EncryptedBackupCodec({AesGcm? cipher, Pbkdf2? keyDerivation})
-    : _cipher = cipher ?? AesGcm.with256bits(),
-      _keyDerivation =
-          keyDerivation ??
-          Pbkdf2(
-            macAlgorithm: Hmac.sha256(),
-            iterations: defaultIterations,
-            bits: 256,
-          );
+      : _cipher = cipher ?? AesGcm.with256bits(),
+        _keyDerivation = keyDerivation ??
+            Pbkdf2(
+              macAlgorithm: Hmac.sha256(),
+              iterations: defaultIterations,
+              bits: 256,
+            );
 
   static const schemaVersion = 1;
   static const defaultIterations = 210000;
@@ -186,12 +197,16 @@ class EncryptedBackupCodec {
 }
 
 class EncryptedBackupService {
-  EncryptedBackupService({EncryptedBackupCodec? codec})
-    : _codec = codec ?? EncryptedBackupCodec();
+  EncryptedBackupService({
+    EncryptedBackupCodec? codec,
+    EncryptedBackupWorkoutStore? workoutStore,
+  })  : _codec = codec ?? EncryptedBackupCodec(),
+        _workoutStore = workoutStore;
 
   static const _supportedPreferenceKeys = <String>[
     'movea.workouts.v1',
     'movea.workouts.recovery.v1',
+    'movea.workouts.file.v1',
     'movea.routes.v1',
     'movea.training_plans.v1',
     'movea.training_profile.v1',
@@ -200,6 +215,7 @@ class EncryptedBackupService {
   ];
 
   final EncryptedBackupCodec _codec;
+  final EncryptedBackupWorkoutStore? _workoutStore;
 
   Future<String> createArchive({
     required String passphrase,
@@ -211,10 +227,18 @@ class EncryptedBackupService {
       final value = preferences.get(key);
       if (value != null) values[key] = value;
     }
+    if (_workoutStore != null) {
+      final archive = await _workoutStore!.readWorkoutArchive();
+      if (archive != null && archive.isNotEmpty) {
+        values['movea.workouts.file.v1'] = archive;
+      }
+    }
     final timestamp = createdAt ?? DateTime.now();
     final manifest = EncryptedBackupManifest(
       createdAt: timestamp,
-      workoutCount: _listLength(values['movea.workouts.v1']),
+      workoutCount:
+          _workoutArchiveRecordCount(values['movea.workouts.file.v1']) ??
+              _listLength(values['movea.workouts.v1']),
       routeCount: _jsonListLength(values['movea.routes.v1']),
       trainingPlanCount: _jsonListLength(values['movea.training_plans.v1']),
       includesTrainingProfile: values.containsKey('movea.training_profile.v1'),
@@ -246,13 +270,34 @@ class EncryptedBackupService {
     final preferences = await SharedPreferences.getInstance();
     final rollback = <String, dynamic>{};
     for (final key in _supportedPreferenceKeys) {
+      if (key == 'movea.workouts.file.v1') continue;
       final value = preferences.get(key);
       if (value != null) rollback[key] = value;
     }
+    final rollbackFileArchive = await _workoutStore?.readWorkoutArchive();
     try {
-      await _replacePreferences(preferences, backup.preferences);
+      await _replacePreferences(
+        preferences,
+        backup.preferences,
+        excludedKeys: const {'movea.workouts.file.v1'},
+      );
+      if (_workoutStore != null) {
+        final fileArchive = backup.preferences['movea.workouts.file.v1'];
+        if (fileArchive is String && fileArchive.isNotEmpty) {
+          await _workoutStore!.writeWorkoutArchive(fileArchive);
+        } else {
+          await _workoutStore!.clearWorkoutArchive();
+        }
+      }
     } on Object {
       await _replacePreferences(preferences, rollback);
+      if (_workoutStore != null) {
+        if (rollbackFileArchive == null || rollbackFileArchive.isEmpty) {
+          await _workoutStore!.clearWorkoutArchive();
+        } else {
+          await _workoutStore!.writeWorkoutArchive(rollbackFileArchive);
+        }
+      }
       rethrow;
     }
     return backup.manifest;
@@ -264,8 +309,7 @@ class EncryptedBackupService {
         throw const EncryptedBackupException('备份包含不受支持的数据类型');
       }
       final value = entry.value;
-      final supported =
-          value is String ||
+      final supported = value is String ||
           value is bool ||
           value is int ||
           value is double ||
@@ -278,12 +322,15 @@ class EncryptedBackupService {
 
   static Future<void> _replacePreferences(
     SharedPreferences preferences,
-    Map<String, dynamic> values,
-  ) async {
+    Map<String, dynamic> values, {
+    Set<String> excludedKeys = const {},
+  }) async {
     for (final key in _supportedPreferenceKeys) {
+      if (excludedKeys.contains(key)) continue;
       await preferences.remove(key);
     }
     for (final entry in values.entries) {
+      if (excludedKeys.contains(entry.key)) continue;
       final value = entry.value;
       if (value is String) {
         await preferences.setString(entry.key, value);
@@ -310,6 +357,19 @@ class EncryptedBackupService {
       return decoded is List ? decoded.length : 0;
     } on Object {
       return 0;
+    }
+  }
+
+  static int? _workoutArchiveRecordCount(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    try {
+      final envelope = jsonDecode(value) as Map<String, dynamic>;
+      final payload = utf8.decode(base64Decode(envelope['payload'] as String));
+      final decoded = jsonDecode(payload) as Map<String, dynamic>;
+      final records = decoded['records'];
+      return records is List ? records.length : null;
+    } on Object {
+      return null;
     }
   }
 }

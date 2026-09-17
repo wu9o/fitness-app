@@ -2864,7 +2864,9 @@ class _EncryptedBackupCard extends StatefulWidget {
 }
 
 class _EncryptedBackupCardState extends State<_EncryptedBackupCard> {
-  final EncryptedBackupService _service = EncryptedBackupService();
+  final EncryptedBackupService _service = EncryptedBackupService(
+    workoutStore: FileWorkoutPersistence(),
+  );
   bool _busy = false;
 
   Future<String?> _requestPassphrase({required bool confirm}) async {

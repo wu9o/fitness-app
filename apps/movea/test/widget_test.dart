@@ -860,6 +860,48 @@ void main() {
     );
   });
 
+  test('Encrypted backup includes and restores the file workout archive',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directory = await Directory.systemTemp.createTemp('movea-backup-');
+    addTearDown(() => directory.delete(recursive: true));
+    final fileStore = FileWorkoutPersistence(
+      directoryProvider: () async => directory,
+    );
+    final record = WorkoutRecord(
+      id: 'file-backed-workout',
+      activity: ActivityType.ride,
+      startedAt: DateTime(2026, 9, 17, 7),
+      duration: const Duration(minutes: 42),
+      distanceMeters: 12500,
+      sourceDevice: 'iPhone',
+      dataSource: WorkoutDataSource.localGps,
+    );
+    await fileStore.write([record]);
+
+    final service = EncryptedBackupService(workoutStore: fileStore);
+    final archive = await service.createArchive(
+      passphrase: 'correct horse battery staple',
+      createdAt: DateTime.utc(2026, 9, 17, 9, 30),
+    );
+    final decrypted = await service.inspectArchive(
+      archive: archive,
+      passphrase: 'correct horse battery staple',
+    );
+
+    expect(archive, isNot(contains('file-backed-workout')));
+    expect(decrypted.manifest.workoutCount, 1);
+    expect(decrypted.preferences['movea.workouts.file.v1'], isA<String>());
+
+    await fileStore.write(const []);
+    expect(await fileStore.read(), isEmpty);
+    await service.restoreArchive(
+      archive: archive,
+      passphrase: 'correct horse battery staple',
+    );
+    expect((await fileStore.read()).single.id, record.id);
+  });
+
   test('Workout storage detects corruption and repairs from its snapshot',
       () async {
     SharedPreferences.setMockInitialValues({});

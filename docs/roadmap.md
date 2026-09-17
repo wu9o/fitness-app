@@ -1,6 +1,6 @@
 # Movea Product & Engineering Roadmap
 
-> Status date: 2026-09-17 · baseline: `main` at `870c5a5`
+> Status date: 2026-09-17 · baseline: `main` at `ebab721`
 
 Movea is a personal, local-first activity and health companion. The product is
 not trying to become a social network or a subscription service. Its main job
@@ -106,11 +106,13 @@ the same stream used by the geolocator adapter, and a widget test verifies
 non-zero distance, calculated pace, GPS accuracy feedback and saved summary
 data. The same test also caught and fixed a narrow-iPhone metric-card overflow.
 The next slice now adds a version envelope for JSON-backed route, plan and
-active-workout payloads while preserving legacy reads. The remaining P0 work is
-durable high-volume storage, broader state-machine coverage and app-surface
-decomposition. A file-backed workout store is now available as an injectable
-rollout path with a recoverable archive; it is not the app default until the
-encrypted backup service covers that store too.
+active-workout payloads while preserving legacy reads. A file-backed workout
+store is available as an injectable rollout path with a recoverable archive,
+and the encrypted backup service now accepts that archive, validates it on
+write and restores it with rollback. The app still keeps SharedPreferences as
+the default until the storage migration is explicitly switched and exercised
+on each target platform. The remaining P0 work is durable high-volume storage
+rollout, broader state-machine coverage and app-surface decomposition.
 
 ## Prioritized delivery plan
 
