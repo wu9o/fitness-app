@@ -499,9 +499,13 @@ class TrainingProfileStore extends ChangeNotifier {
 }
 
 class RouteGuidancePreferences {
-  const RouteGuidancePreferences({this.hapticsEnabled = true});
+  const RouteGuidancePreferences({
+    this.hapticsEnabled = true,
+    this.voiceEnabled = false,
+  });
 
   final bool hapticsEnabled;
+  final bool voiceEnabled;
 }
 
 abstract interface class RouteGuidancePreferencesPersistence {
@@ -512,12 +516,14 @@ abstract interface class RouteGuidancePreferencesPersistence {
 class SharedPreferencesRouteGuidancePreferencesPersistence
     implements RouteGuidancePreferencesPersistence {
   static const hapticsKey = 'movea.route_guidance.haptics.v1';
+  static const voiceKey = 'movea.route_guidance.voice.v1';
 
   @override
   Future<RouteGuidancePreferences> read() async {
     final preferences = await SharedPreferences.getInstance();
     return RouteGuidancePreferences(
       hapticsEnabled: preferences.getBool(hapticsKey) ?? true,
+      voiceEnabled: preferences.getBool(voiceKey) ?? false,
     );
   }
 
@@ -525,6 +531,7 @@ class SharedPreferencesRouteGuidancePreferencesPersistence
   Future<void> write(RouteGuidancePreferences value) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(hapticsKey, value.hapticsEnabled);
+    await preferences.setBool(voiceKey, value.voiceEnabled);
   }
 }
 
@@ -550,7 +557,20 @@ class RouteGuidancePreferencesStore extends ChangeNotifier {
   }
 
   Future<void> setHapticsEnabled(bool enabled) async {
-    _preferences = RouteGuidancePreferences(hapticsEnabled: enabled);
+    _preferences = RouteGuidancePreferences(
+      hapticsEnabled: enabled,
+      voiceEnabled: _preferences.voiceEnabled,
+    );
+    _isRestored = true;
+    notifyListeners();
+    await _persistence.write(_preferences);
+  }
+
+  Future<void> setVoiceEnabled(bool enabled) async {
+    _preferences = RouteGuidancePreferences(
+      hapticsEnabled: _preferences.hapticsEnabled,
+      voiceEnabled: enabled,
+    );
     _isRestored = true;
     notifyListeners();
     await _persistence.write(_preferences);

@@ -196,6 +196,7 @@ class EncryptedBackupService {
     'movea.training_plans.v1',
     'movea.training_profile.v1',
     'movea.route_guidance.haptics.v1',
+    'movea.route_guidance.voice.v1',
   ];
 
   final EncryptedBackupCodec _codec;

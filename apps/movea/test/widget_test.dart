@@ -287,7 +287,8 @@ void main() {
     expect(find.text('≥ 171 bpm'), findsOneWidget);
   });
 
-  testWidgets('Settings persist the route haptics preference', (tester) async {
+  testWidgets('Settings persist route haptics and voice preferences',
+      (tester) async {
     SharedPreferences.setMockInitialValues({});
     final profileStore = TrainingProfileStore();
     final routePreferencesStore = RouteGuidancePreferencesStore();
@@ -307,10 +308,16 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('route-haptics-toggle')));
     await tester.pumpAndSettle();
     expect(routePreferencesStore.preferences.hapticsEnabled, isFalse);
+    expect(routePreferencesStore.preferences.voiceEnabled, isFalse);
+    await tester.tap(find.byKey(const ValueKey('route-voice-toggle')));
+    await tester.pumpAndSettle();
+    expect(routePreferencesStore.preferences.voiceEnabled, isTrue);
+    expect(routePreferencesStore.preferences.hapticsEnabled, isFalse);
 
     final restored = RouteGuidancePreferencesStore();
     await restored.restore();
     expect(restored.preferences.hapticsEnabled, isFalse);
+    expect(restored.preferences.voiceEnabled, isTrue);
   });
 
   testWidgets('Movea activity flow supports type, pause, finish and history',

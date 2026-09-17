@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:maplibre/maplibre.dart' as ml;
 import 'package:movea_data/movea_data.dart';
@@ -2750,16 +2751,34 @@ class SettingsPage extends StatelessWidget {
               AnimatedBuilder(
                 animation: routePreferencesStore,
                 builder: (context, _) => Card(
-                  child: SwitchListTile(
-                    key: const ValueKey('route-haptics-toggle'),
-                    secondary: const Icon(Icons.vibration, color: moveaBlue),
-                    title: const Text('路线触觉提醒',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: const Text('转向、偏航、返回路线和即将到达时触发一次'),
-                    value: routePreferencesStore.preferences.hapticsEnabled,
-                    onChanged: (value) => unawaited(
-                      routePreferencesStore.setHapticsEnabled(value),
-                    ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        key: const ValueKey('route-haptics-toggle'),
+                        secondary:
+                            const Icon(Icons.vibration, color: moveaBlue),
+                        title: const Text('路线触觉提醒',
+                            style: TextStyle(fontWeight: FontWeight.w800)),
+                        subtitle: const Text('转向、偏航、返回路线和即将到达时触发一次'),
+                        value: routePreferencesStore.preferences.hapticsEnabled,
+                        onChanged: (value) => unawaited(
+                          routePreferencesStore.setHapticsEnabled(value),
+                        ),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      SwitchListTile(
+                        key: const ValueKey('route-voice-toggle'),
+                        secondary: const Icon(Icons.volume_up_outlined,
+                            color: moveaBlue),
+                        title: const Text('中文语音提示',
+                            style: TextStyle(fontWeight: FontWeight.w800)),
+                        subtitle: const Text('播报转向、偏航、返回路线和到达提示'),
+                        value: routePreferencesStore.preferences.voiceEnabled,
+                        onChanged: (value) => unawaited(
+                          routePreferencesStore.setVoiceEnabled(value),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -2767,7 +2786,7 @@ class SettingsPage extends StatelessWidget {
               const Card(
                 child: ListTile(
                   leading: Icon(Icons.vibration),
-                  title: Text('路线触觉提醒'),
+                  title: Text('路线提醒'),
                   subtitle: Text('当前预览未连接提醒设置'),
                 ),
               ),
@@ -3329,6 +3348,8 @@ class _ActivityPageState extends State<ActivityPage> {
   final RouteGuidanceCueTracker routeCueTracker = RouteGuidanceCueTracker();
   StreamSubscription<LocationPoint>? locationSubscription;
   RouteGuidancePreferencesStore? routeGuidancePreferencesStore;
+  FlutterTts? routeVoice;
+  bool routeVoiceConfigured = false;
 
   @override
   void initState() {
@@ -3520,22 +3541,24 @@ class _ActivityPageState extends State<ActivityPage> {
   void _handleRouteGuidanceCue(LocationPoint point) {
     final route = widget.selectedRoute;
     if (route == null || route.points.length < 2) return;
-    if (routeGuidancePreferencesStore?.preferences.hapticsEnabled != true) {
-      return;
-    }
-    final cue = routeCueTracker.update(
-      calculateRouteGuidance(point, route.points),
-    );
+    final preferences = routeGuidancePreferencesStore?.preferences ??
+        const RouteGuidancePreferences();
+    if (!preferences.hapticsEnabled && !preferences.voiceEnabled) return;
+    final guidance = calculateRouteGuidance(point, route.points);
+    final cue = routeCueTracker.update(guidance);
     if (cue == null) return;
-    switch (cue) {
-      case RouteGuidanceCue.offRoute:
-      case RouteGuidanceCue.arriving:
-        unawaited(HapticFeedback.heavyImpact());
-      case RouteGuidanceCue.backOnRoute:
-      case RouteGuidanceCue.turnLeft:
-      case RouteGuidanceCue.turnRight:
-        unawaited(HapticFeedback.mediumImpact());
+    if (preferences.hapticsEnabled) {
+      switch (cue) {
+        case RouteGuidanceCue.offRoute:
+        case RouteGuidanceCue.arriving:
+          unawaited(HapticFeedback.heavyImpact());
+        case RouteGuidanceCue.backOnRoute:
+        case RouteGuidanceCue.turnLeft:
+        case RouteGuidanceCue.turnRight:
+          unawaited(HapticFeedback.mediumImpact());
+      }
     }
+    if (preferences.voiceEnabled) unawaited(_speakRouteCue(cue, guidance));
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     messenger
@@ -3544,7 +3567,12 @@ class _ActivityPageState extends State<ActivityPage> {
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.vibration, color: Colors.white),
+              Icon(
+                preferences.voiceEnabled
+                    ? Icons.volume_up_outlined
+                    : Icons.vibration,
+                color: Colors.white,
+              ),
               const SizedBox(width: 10),
               Expanded(child: Text(cue.label)),
             ],
@@ -3553,6 +3581,31 @@ class _ActivityPageState extends State<ActivityPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+  }
+
+  Future<void> _speakRouteCue(
+    RouteGuidanceCue cue,
+    RouteGuidance guidance,
+  ) async {
+    final speaker = routeVoice ??= FlutterTts();
+    if (!routeVoiceConfigured) {
+      await speaker.setLanguage('zh-CN');
+      await speaker.setSpeechRate(0.48);
+      await speaker.setVolume(0.9);
+      await speaker.setPitch(1.0);
+      routeVoiceConfigured = true;
+    }
+    await speaker.stop();
+    final distance =
+        math.max(10, (guidance.distanceToManeuverMeters / 10).round() * 10);
+    final message = switch (cue) {
+      RouteGuidanceCue.offRoute => '已偏离计划路线，请返回路线',
+      RouteGuidanceCue.backOnRoute => '已返回计划路线',
+      RouteGuidanceCue.turnLeft => '前方约 $distance 米左转',
+      RouteGuidanceCue.turnRight => '前方约 $distance 米右转',
+      RouteGuidanceCue.arriving => '即将到达路线终点',
+    };
+    await speaker.speak(message);
   }
 
   Duration activeElapsed() {
@@ -3734,6 +3787,7 @@ class _ActivityPageState extends State<ActivityPage> {
   @override
   void dispose() {
     timer?.cancel();
+    if (routeVoice != null) unawaited(routeVoice!.stop());
     unawaited(widget.locationRepository.stop());
     unawaited(_cancelLocationSubscription());
     super.dispose();
