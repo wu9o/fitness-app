@@ -715,6 +715,67 @@ class RouteSummary {
   String get distanceLabel =>
       '${(distanceMeters / 1000).toStringAsFixed(1)} km';
 
+  double get distanceKilometers => distanceMeters / 1000;
+
+  double get climbPerKilometer =>
+      distanceMeters <= 0 ? 0 : elevationMeters / distanceKilometers;
+
+  String get difficultyLabel {
+    if (tags.any((tag) => tag.contains('挑战') || tag.contains('困难'))) {
+      return '挑战';
+    }
+    if (tags.any((tag) => tag.contains('中等'))) return '中等';
+    if (tags.any((tag) => tag.contains('简单') || tag.contains('轻松'))) {
+      return '轻松';
+    }
+    final distanceScore = distanceKilometers >= 12
+        ? 2
+        : distanceKilometers >= 6
+        ? 1
+        : 0;
+    final climbScore = climbPerKilometer >= 25
+        ? 2
+        : climbPerKilometer >= 12
+        ? 1
+        : 0;
+    final score = distanceScore + climbScore;
+    return score >= 3
+        ? '挑战'
+        : score >= 2
+        ? '中等'
+        : '轻松';
+  }
+
+  String get estimatedPaceLabel {
+    if (distanceMeters <= 0 || estimatedMinutes <= 0) return '--';
+    final secondsPerKilometer = (estimatedMinutes * 60 / distanceKilometers)
+        .round();
+    final minutes = secondsPerKilometer ~/ 60;
+    final seconds = (secondsPerKilometer % 60).toString().padLeft(2, '0');
+    return "$minutes'$seconds\" /km";
+  }
+
+  bool get isLoop {
+    if (points.length < 3) return false;
+    return _routeDistance(points.first, points.last) <= 120;
+  }
+
+  String get shapeLabel => isLoop ? '环线' : '点到点';
+
+  String get hydrationAdvice {
+    if (estimatedMinutes <= 45) return '出发前补水即可，炎热天气建议随身带水。';
+    if (estimatedMinutes <= 75) return '建议携带 300–500 ml 饮水，并在中途小口补充。';
+    return '建议携带饮水和能量补给，约每 40–50 分钟补充一次。';
+  }
+
+  String get effortAdvice {
+    return switch (difficultyLabel) {
+      '挑战' => '适合状态良好时完成，前半程注意保留体力。',
+      '中等' => '适合稳定有氧训练，保持可以说短句的强度。',
+      _ => '适合轻松跑、恢复训练或熟悉路线。',
+    };
+  }
+
   RouteSummary copyWith({
     String? id,
     String? name,

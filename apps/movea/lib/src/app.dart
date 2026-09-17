@@ -7613,12 +7613,9 @@ class RouteDetailPage extends StatelessWidget {
                       fontSize: 22, fontWeight: FontWeight.w800)),
             ]),
             const SizedBox(height: 6),
-            Text(
-                '约 ${route.estimatedMinutes} 分钟  ·  爬升 ${route.elevationMeters} m',
-                style: const TextStyle(color: Colors.black54)),
-            const SizedBox(height: 14),
             Wrap(
               spacing: 6,
+              runSpacing: 6,
               children: [
                 for (final tag in route.tags)
                   Chip(
@@ -7628,7 +7625,96 @@ class RouteDetailPage extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+            const MoveaSectionTitle('路线概览'),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth >= 620 ? 4 : 2;
+                return GridView.count(
+                  crossAxisCount: columns,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: columns == 4 ? 1.35 : 1.55,
+                  children: [
+                    _RouteMetricTile(
+                      icon: Icons.straighten,
+                      label: '距离',
+                      value: route.distanceLabel,
+                      color: moveaLavender,
+                    ),
+                    _RouteMetricTile(
+                      icon: Icons.schedule,
+                      label: '预计时间',
+                      value: '${route.estimatedMinutes} 分钟',
+                      color: moveaMint,
+                    ),
+                    _RouteMetricTile(
+                      icon: Icons.landscape_outlined,
+                      label: '累计爬升',
+                      value: '${route.elevationMeters} m',
+                      color: moveaLemon,
+                    ),
+                    _RouteMetricTile(
+                      icon: Icons.speed,
+                      label: '路线难度',
+                      value: route.difficultyLabel,
+                      color: const Color(0xFFFFE8E2),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('适合这次训练吗？',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 14),
+                    _RouteInsightRow(
+                      icon: Icons.route_outlined,
+                      label: '路线形式',
+                      value: route.shapeLabel,
+                    ),
+                    _RouteInsightRow(
+                      icon: Icons.timer_outlined,
+                      label: '参考配速',
+                      value: route.estimatedPaceLabel,
+                    ),
+                    _RouteInsightRow(
+                      icon: Icons.trending_up,
+                      label: '爬升密度',
+                      value:
+                          '${route.climbPerKilometer.toStringAsFixed(0)} m/km',
+                    ),
+                    const SizedBox(height: 8),
+                    Text(route.effortAdvice,
+                        style: const TextStyle(color: Colors.black54)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Card(
+              color: moveaLemon,
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.water_drop_outlined, color: moveaBlue),
+                ),
+                title: const Text('补水与准备',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(route.hydrationAdvice),
+              ),
+            ),
+            const SizedBox(height: 14),
             const Card(
               color: moveaMint,
               child: ListTile(
@@ -7649,6 +7735,75 @@ class RouteDetailPage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RouteMetricTile extends StatelessWidget {
+  const _RouteMetricTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: color,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 20, color: moveaInk),
+            const Spacer(),
+            Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 3),
+            Text(label,
+                style: const TextStyle(fontSize: 11, color: Colors.black54)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteInsightRow extends StatelessWidget {
+  const _RouteInsightRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 11),
+      child: Row(
+        children: [
+          Icon(icon, size: 19, color: moveaBlue),
+          const SizedBox(width: 10),
+          Expanded(
+              child:
+                  Text(label, style: const TextStyle(color: Colors.black54))),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
       ),
     );
   }

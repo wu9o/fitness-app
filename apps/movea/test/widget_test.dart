@@ -138,6 +138,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('route-thumbnail')));
     await tester.pumpAndSettle();
     expect(find.text('路线详情'), findsOneWidget);
+    expect(find.text('路线概览'), findsOneWidget);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -700));
+    await tester.pumpAndSettle();
     expect(find.text('开始并跟随路线'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
@@ -1021,6 +1024,40 @@ void main() {
     expect(route.name, '周末慢跑');
     expect(route.isSaved, isTrue);
     expect(route.points, hasLength(2));
+  });
+
+  test('RouteSummary derives difficulty, shape, pace and hydration guidance',
+      () {
+    const route = RouteSummary(
+      id: 'route-insight',
+      name: '测试环线',
+      distanceMeters: 5000,
+      estimatedMinutes: 30,
+      elevationMeters: 80,
+      tags: ['简单'],
+      points: [
+        LocationPoint(latitude: 31.2304, longitude: 121.4737),
+        LocationPoint(latitude: 31.2340, longitude: 121.4780),
+        LocationPoint(latitude: 31.2304, longitude: 121.4737),
+      ],
+    );
+
+    expect(route.difficultyLabel, '轻松');
+    expect(route.shapeLabel, '环线');
+    expect(route.estimatedPaceLabel, "6'00\" /km");
+    expect(route.climbPerKilometer, 16);
+    expect(route.hydrationAdvice, contains('出发前补水'));
+
+    const challenge = RouteSummary(
+      id: 'route-challenge',
+      name: '长距离爬升',
+      distanceMeters: 15000,
+      estimatedMinutes: 95,
+      elevationMeters: 420,
+    );
+    expect(challenge.difficultyLabel, '挑战');
+    expect(challenge.shapeLabel, '点到点');
+    expect(challenge.hydrationAdvice, contains('能量补给'));
   });
 
   test('WorkoutRecord derives pace, climb and GPS quality', () {
