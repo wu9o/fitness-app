@@ -1,0 +1,139 @@
+name: Preview Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: preview-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  resolve-tag:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - id: release
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "tag=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+  android:
+    name: Android release preview
+    needs: resolve-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/movea
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - name: Stage Android preview
+        env:
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          mkdir -p build/release
+          cp build/app/outputs/flutter-apk/app-release.apk "build/release/movea-android-${RELEASE_TAG}.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: movea-android-${{ needs.resolve-tag.outputs.tag }}
+          path: apps/movea/build/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  apple:
+    name: Apple release previews
+    needs: resolve-tag
+    runs-on: macos-15
+    timeout-minutes: 50
+    defaults:
+      run:
+        working-directory: apps/movea
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --simulator --release
+      - run: flutter build macos --release
+      - name: Archive Apple previews
+        env:
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          mkdir -p build/release
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/ios/iphonesimulator/Runner.app \
+            "build/release/movea-ios-simulator-${RELEASE_TAG}.zip"
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/macos/Build/Products/Release/movea.app \
+            "build/release/movea-macos-${RELEASE_TAG}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: movea-apple-${{ needs.resolve-tag.outputs.tag }}
+          path: apps/movea/build/release/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub prerelease
+    needs: [resolve-tag, android, apple]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: movea-*-${{ needs.resolve-tag.outputs.tag }}
+          path: release-assets
+          merge-multiple: true
+      - name: Publish preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "Movea ${RELEASE_TAG#v} · Development Preview" \
+              --generate-notes \
+              --prerelease
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber

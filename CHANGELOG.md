@@ -2,6 +2,25 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.1] - 2026-09-17 — 可下载预览 Downloadable Preview
+
+### Added
+
+- 标签驱动的 GitHub Preview Release 流水线
+- Android、iOS Simulator 与 macOS 的持久化 Release 附件
+- 中英文 README 中明确的构建类型、签名状态与下载说明
+
+### Changed
+
+- GitHub 官方 Actions 升级至当前主版本
+- CI 临时产物与 GitHub Release 版本产物分离
+
+### Distribution notes
+
+- Android APK 使用开发签名，仅适合测试
+- iOS 构建仅支持 Simulator，不是 iPhone 真机 IPA
+- macOS 应用尚未进行 Developer ID 签名与公证
+
 ## [0.1.0] - 2026-09-17 — 起跑线 Trailhead
 
 首个公开 Alpha 版本，建立 Movea 的跨平台产品和工程基线。

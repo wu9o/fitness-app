@@ -3,7 +3,6 @@ name: App Builds
 on:
   push:
     branches: [main]
-    tags: ['v*']
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -26,7 +25,7 @@ jobs:
       run:
         working-directory: apps/movea
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -38,7 +37,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build apk --debug
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: movea-android-debug-${{ github.sha }}
           path: apps/movea/build/app/outputs/flutter-apk/app-debug.apk
@@ -52,7 +51,7 @@ jobs:
       run:
         working-directory: apps/movea
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.4'
@@ -65,7 +64,7 @@ jobs:
         run: |
           ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/movea-ios-simulator.zip
           ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Debug/movea.app build/movea-macos-debug.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: movea-apple-debug-${{ github.sha }}
           path: |

@@ -83,7 +83,10 @@ GPS 模拟和各平台验证方式见 [开发指南](docs/development.md) 与 [G
 
 - **Flutter CI**：格式、静态分析和测试。
 - **App Builds**：生成 Android Debug APK、iOS Simulator App 和 macOS Debug App。
-- 流水线产物仅用于开发预览，不是已签名的应用商店安装包。
+- **Preview Release**：推送 `v*` 标签时，将持久化的可下载构建发布到 GitHub Releases。
+- Release 附件是开发预览，包括开发签名的 Android APK、iOS 模拟器应用和未签名 macOS 应用，不是 App Store 或 Play Store 安装包。
+
+可从 [GitHub Releases](https://github.com/wu9o/movea/releases) 下载最新预览。iPhone 真机和应用商店分发仍需配置正式签名与 Provisioning Profile。
 
 ## 仓库结构
 
