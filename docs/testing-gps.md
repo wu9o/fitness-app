@@ -22,7 +22,7 @@ iOS Simulator Core Location
 先启动 Movea，并进入“运动 → 户外运动”。在终端执行：
 
 ```bash
-cd /Users/wu9o/PriGit/fitness-app
+cd /path/to/movea
 ./tooling/simulate-gps-route.sh prepare
 ```
 

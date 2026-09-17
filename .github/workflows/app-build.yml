@@ -1,0 +1,74 @@
+name: App Builds
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - '.github/workflows/app-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/movea
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movea-android-debug-${{ github.sha }}
+          path: apps/movea/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
+
+  apple:
+    name: Apple simulator and macOS debug apps
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/movea
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --simulator --debug
+      - run: flutter build macos --debug
+      - name: Archive application bundles
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/movea-ios-simulator.zip
+          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Debug/movea.app build/movea-macos-debug.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movea-apple-debug-${{ github.sha }}
+          path: |
+            apps/movea/build/movea-ios-simulator.zip
+            apps/movea/build/movea-macos-debug.zip
+          retention-days: 7

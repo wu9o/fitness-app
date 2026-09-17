@@ -1,150 +1,161 @@
-# 动迹 Movea
+<p align="center">
+  <img src="apps/movea/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png" width="112" alt="Movea app icon">
+</p>
 
-[![Flutter CI](https://github.com/wu9o/fitness-app/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/wu9o/fitness-app/actions/workflows/flutter-ci.yml)
-[![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
-[![Exercise assets: CC BY-SA 4.0](https://img.shields.io/badge/exercise%20assets-CC%20BY--SA%204.0-green.svg)](third_party/workout-guide/LICENSE-ASSETS)
+<h1 align="center">Movea</h1>
 
-面向个人使用、本地优先的多设备运动与健康记录应用。项目当前处于 **Alpha** 阶段，欢迎体验、讨论和贡献，但尚不适合替代专业医疗或训练建议。
+<p align="center">
+  A local-first, cross-platform companion for outdoor activity, strength training, recovery, and health.
+</p>
 
-Movea 记录跑步、骑行、拉伸、力量训练、睡眠和健康数据，目标是让同一套个人数据可以在 iPhone、iPad、Mac、Apple Watch 和 Android 之间自然流动。
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-> 当前仓库正在从早期 SwiftUI 原型迁移到 Flutter 主应用 + 原生 Apple Watch 模块的跨平台架构。现有 SwiftUI 代码保留在 `legacy/swiftui-prototype`，用于对照原有交互和视觉稿。
+<p align="center">
+  <a href="https://github.com/wu9o/movea/actions/workflows/flutter-ci.yml"><img src="https://github.com/wu9o/movea/actions/workflows/flutter-ci.yml/badge.svg" alt="Flutter CI"></a>
+  <a href="https://github.com/wu9o/movea/actions/workflows/app-build.yml"><img src="https://github.com/wu9o/movea/actions/workflows/app-build.yml/badge.svg" alt="App Builds"></a>
+  <a href="https://github.com/wu9o/movea/releases"><img src="https://img.shields.io/github/v/release/wu9o/movea?include_prereleases" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-blue.svg" alt="MIT License"></a>
+  <a href="third_party/workout-guide/LICENSE-ASSETS"><img src="https://img.shields.io/badge/exercise%20art-CC%20BY--SA%204.0-green.svg" alt="Exercise art license"></a>
+</p>
 
-## 当前能力
+> [!WARNING]
+> Movea is an alpha project for personal use and experimentation. It is not a medical device and does not replace professional health or training advice.
 
-- 户外运动：跑步、骑行等运动的 GPS 记录、暂停恢复、配速和轨迹质量
-- 路线：MapLibre + OpenFreeMap 自定义运动地图、路线保存、跟随、偏航和转向提醒
-- 运动分析：全部记录、训练日历、周报、负荷趋势、心率曲线和个性化心率区间
-- 健身训练：302 个动作、906 帧演示、训练计划模板和训练中动作指导
-- 健康：HealthKit 运动与心率导入、睡眠详情、体重与恢复信息的统一入口
-- 数据安全：本地校验恢复、AES-256-GCM 加密导出与恢复，不在源码中保存账号密钥
-- 多设备：iPhone/iPad/macOS Flutter 应用，以及待接入正式 target 的原生 watchOS 模块
+## Product tour
 
-## 快速开始
+<p align="center">
+  <img src="docs/images/iphone-home.png" width="19%" alt="Movea home dashboard">
+  <img src="docs/images/iphone-sports.png" width="19%" alt="Movea sports hub">
+  <img src="docs/images/iphone-route-detail.png" width="19%" alt="Movea route details">
+  <img src="docs/images/iphone-exercise-library.png" width="19%" alt="Movea exercise library">
+  <img src="docs/images/iphone-exercise-detail.png" width="19%" alt="Movea exercise guidance">
+</p>
 
-环境要求：Flutter 3.47 或兼容的 stable 版本、Dart 3.3+；构建 Apple 平台还需要 Xcode。
+These screenshots come from the current Flutter app running on an iPhone 16 Pro simulator. The displayed records are demo data.
+
+## What Movea is building
+
+| Area | Current experience |
+| --- | --- |
+| Outdoor activity | Run and ride recording, GPS quality, pause/resume, live distance, pace, and route traces |
+| Routes | MapLibre + OpenFreeMap rendering, saved routes, route following, deviation checks, and spoken/haptic cues |
+| Training insights | Activity history, calendar, weekly reports, load trends, heart-rate charts, and personalized zones |
+| Strength training | 302 searchable exercises, 906 illustration frames, reusable workout plans, timers, sets, and rest intervals |
+| Health | HealthKit imports, sleep stages and quality, weight, recovery context, and source-aware records |
+| Data safety | Local-first storage, integrity snapshots, diagnostics, and AES-256-GCM encrypted backup/restore |
+| Apple Watch | Native workout-session source is present; formal target integration and paired-device validation remain |
+| Android | Shared Flutter experience is planned; Android location and Health Connect adapters remain in progress |
+
+## Design principles
+
+- Local data is the source of truth; cloud storage is an optional encrypted backup.
+- Recording a workout must work offline.
+- Real health data and demo data must be unmistakably separated.
+- Shared domain logic comes before platform-specific UI.
+- Every supported form factor receives its own interaction and layout review.
+- Maps help the user understand movement; they should not overwhelm the route.
+
+## Platform plan
+
+| Platform | Intended role | Implementation |
+| --- | --- | --- |
+| iPhone | Complete activity, route, training, and health experience | Flutter |
+| iPad | Split-view history, route planning, and health analysis | Adaptive Flutter UI |
+| macOS | History, trend analysis, planning, and data management | Flutter macOS |
+| Android | Activity, route, training, and health experience | Flutter |
+| Apple Watch | Fast workout controls, heart rate, and location | Native watchOS / SwiftUI |
+
+## Architecture
+
+```text
+                   +------------------------+
+                   |   Shared domain layer  |
+                   | activity / route /     |
+                   | health / backup        |
+                   +-----------+------------+
+                               |
+              +----------------+----------------+
+              |                                 |
+   +----------v-----------+          +----------v-----------+
+   | Flutter applications |          | Native Watch module  |
+   | iOS / iPadOS / macOS |          | workout / sensors    |
+   | Android              |          | Watch Connectivity   |
+   +----------+-----------+          +----------+-----------+
+              |                                 |
+   +----------v---------------------------------v-----------+
+   | Platform adapters: location, health, storage, speech   |
+   +--------------------------------------------------------+
+```
+
+- Flutter and Dart provide the shared navigation, UI, domain models, and backup flows.
+- Platform adapters isolate HealthKit, Health Connect, Core Location, and Android location services.
+- MapLibre renders an open map stack without embedding a commercial map credential.
+- GitHub private repositories are treated as encrypted backup destinations, not realtime databases.
+- The first SwiftUI prototype remains in `legacy/swiftui-prototype` as an interaction reference.
+
+More detail: [product](docs/product.md) · [architecture](docs/architecture.md) · [roadmap](docs/roadmap.md)
+
+## Quick start
+
+Requirements: Flutter 3.47 (or a compatible stable version), Dart 3.3+, and Xcode for Apple builds.
 
 ```bash
-git clone https://github.com/wu9o/fitness-app.git
-cd fitness-app/apps/movea
+git clone https://github.com/wu9o/movea.git
+cd movea/apps/movea
 flutter pub get
 flutter analyze
 flutter test
 flutter run
 ```
 
-GPS 模拟、平台构建和设备验证见 [`docs/development.md`](docs/development.md) 与 [`docs/testing-gps.md`](docs/testing-gps.md)。
+For simulator GPS playback and platform-specific checks, read [development.md](docs/development.md) and [testing-gps.md](docs/testing-gps.md).
 
-## 产品方向
+## Continuous integration
 
-- 记录：运动过程、GPS 路线、运动时长和训练类型
-- 复用：保存路线，查看难度、爬升、参考配速和补水建议，并在下一次运动时跟随路线
-- 了解：睡眠、恢复状态和运动趋势
-- 学习：跑步、骑行、拉伸和力量训练知识
-- 动作库：内置 Workout Guide 的 302 个动作和 906 帧演示，支持按部位、类型和器械检索
-- 同步：本地优先，使用端到端加密数据备份到个人 GitHub 私密仓库
-- 多端：手机负责完整体验，Mac/iPad 负责查看和分析，Apple Watch 负责运动中的快速记录
+- **Flutter CI** runs formatting, static analysis, and tests for the app and shared packages.
+- **App Builds** produces an Android debug APK plus iOS Simulator and macOS debug bundles.
+- Build artifacts are development previews. They are not signed App Store or Play Store releases.
 
-## 目标设备
-
-| 设备 | 目标体验 | 实现方式 |
-| --- | --- | --- |
-| iPhone | 完整运动、健康和路线体验 | Flutter |
-| iPad | 分栏查看记录、路线和健康趋势 | Flutter 自适应布局 |
-| Mac | 历史记录、趋势分析和数据管理 | Flutter macOS |
-| Android | 运动记录、路线和健康数据 | Flutter |
-| Apple Watch | 独立开始/暂停/结束运动、心率和定位 | 原生 watchOS / SwiftUI |
-
-## 技术架构
+## Repository layout
 
 ```text
-                    +-----------------------+
-                    |       Movea API       |
-                    |  domain / sync / auth |
-                    +-----------+-----------+
-                                |
-             +------------------+------------------+
-             |                                     |
-  +----------v-----------+              +----------v-----------+
-  | Flutter applications |              | Native Watch target  |
-  | iPhone / iPad / Mac  |              | watchOS workout      |
-  | Android              |              | HealthKit / sensors  |
-  +----------+-----------+              +----------+-----------+
-             |                                     |
-  +----------v-----------+              +----------v-----------+
-  | Platform adapters    |              | Watch Connectivity   |
-  | Health / location    |<------------>| iPhone companion     |
-  +----------------------+              +----------------------+
-```
-
-- Flutter/Dart：共享主要界面、导航、领域模型、记录和同步流程
-- 平台适配层：隔离 HealthKit、Health Connect、Core Location 和 Android Location
-- Apple Watch：使用 watchOS Workout Session，避免把低功耗传感器能力塞进跨平台 UI
-- 数据层：设备本地持久化作为第一数据源，GitHub 私密仓库作为加密备份，不作为实时数据库
-- 本地数据安全：运动记录校验快照、损坏诊断，以及 AES-256-GCM 加密备份文件的导出与验证
-
-## 数据与隐私
-
-运动和健康数据默认保存在设备本地。上传 GitHub 前先在设备端加密，私密仓库只保存加密备份文件和版本清单。
-
-当前阶段不会把 GitHub token 或明文健康数据写入仓库。跨设备同步需要处理 OAuth token 安全、冲突合并、离线重试和恢复密钥，这些会在同步模块中单独设计和测试。
-
-## 仓库结构
-
-```text
-fitness-app/
-├── apps/
-│   └── movea/                 # Flutter 主应用：iOS / iPadOS / macOS / Android
+movea/
+├── apps/movea/                 # Flutter application
 ├── packages/
-│   ├── movea_domain/           # 运动、路线、睡眠和记录领域模型
-│   ├── movea_data/             # 本地存储、加密备份和同步接口
-│   └── movea_design/           # 颜色、字体、组件和响应式设计 token
-├── watchos/
-│   └── MoveaWatch/             # 原生 Apple Watch companion target
-├── docs/
-│   ├── product.md              # 产品边界和核心流程
-│   ├── architecture.md         # 跨端架构和数据边界
-│   ├── development.md          # 本地开发与验证方式
-│   └── testing-gps.md          # iOS Simulator 真实 GPS 轨迹回放
-├── tooling/
-│   ├── simulate-gps-route.sh   # Core Location 航点回放脚本
-│   └── fixtures/                # 可重复的测试轨迹
-├── legacy/
-│   └── swiftui-prototype/      # 第一版 SwiftUI 原型，仅作迁移参考
-└── README.md
+│   ├── movea_domain/           # Activity, route, health, and record models
+│   ├── movea_data/             # Local storage, encrypted backup, sync contracts
+│   └── movea_design/           # Design tokens and responsive components
+├── watchos/MoveaWatch/         # Native Apple Watch companion source
+├── docs/                       # Product, architecture, roadmap, and QA guides
+├── tooling/                    # GPS playback and development utilities
+├── third_party/                # Attributions and imported exercise assets
+└── legacy/swiftui-prototype/   # Historical prototype
 ```
 
-## 迁移路线
+## Roadmap
 
-1. 完成 Flutter 工程和共享领域模型
-2. 迁移首页、运动、健康、路线和学习流程
-3. 加入 iPad 分栏布局和 macOS 键鼠交互
-4. 接入 Android 定位和 Health Connect
-5. 加入独立 Apple Watch workout session
-6. 完成加密 GitHub 备份、冲突合并和恢复流程
-7. 用真实 iPhone、Apple Watch 和 Android 设备完成发布前验证
+Near-term work focuses on:
 
-## 当前状态
+1. paired-device validation for the Apple Watch workout flow;
+2. more robust GPS recording and route guidance on real devices;
+3. platform-native health adapters for Android;
+4. encrypted GitHub backup conflict handling and recovery UX;
+5. accessibility, localization, performance, and platform-specific visual QA.
 
-- SwiftUI 原型：可运行，用于保留已确认的视觉和交互参考
-- Flutter 主应用：已具备 MapLibre/OpenFreeMap 地图、可折叠运动控制、本地运动记录、运动结束总结、GPS 采样质量、路线触觉与中文语音提醒、HealthKit 设备运动与心率曲线导入、个性化心率 5 区、校验恢复快照、加密备份恢复、记录来源筛选、28 天负荷趋势、睡眠详情、训练计划模板和路线保存/跟随流程
-- 健身动作库：已导入动作元数据和 SVG 演示帧；训练计划可从动作库选动作，计划详情和训练中都可打开动作演示
-- 下一阶段路线图：见 [`docs/roadmap.md`](docs/roadmap.md)，继续补充 Apple Watch 真机来源验证、路线音频/触觉和 GPS 稳定性验证，再推进多设备同步
-- Apple Watch：原生运动会话、实时指标和摘要补传源码已实现，尚待加入正式 watchOS target 并完成配对真机验证
-- GitHub 加密同步：已有概念验证，尚未作为正式数据层发布
+See [the detailed roadmap](docs/roadmap.md) for the current engineering sequence.
 
-## 参与贡献
+## Privacy and security
 
-问题反馈和代码贡献请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。安全问题请不要提交公开 Issue，处理方式见 [`SECURITY.md`](SECURITY.md)。
+Activity and health records remain on the device by default. Tokens, plaintext health exports, signing material, and personal route data must never be committed. Backups are encrypted on-device before upload.
 
-## 许可证与第三方内容
+Please report vulnerabilities privately through [GitHub Security Advisories](https://github.com/wu9o/movea/security/advisories/new), not through public issues. See [SECURITY.md](SECURITY.md).
 
-Movea 自有源代码以 [MIT License](LICENSE) 发布。动作插画来自 [Workout Guide](https://github.com/bryllim/workout-guide)，按 [CC BY-SA 4.0](third_party/workout-guide/LICENSE-ASSETS) 使用；其中部分作品源自 Everkinetic，完整署名和改动记录见 [`third_party/workout-guide`](third_party/workout-guide) 与动作 `manifest.json`。地图数据和运行时服务的署名见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+## Contributing
 
-## 开发原则
+Bug reports, product discussions, and focused pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and remove personal location or health data from all screenshots and logs.
 
-- 先定义跨端领域模型，再实现平台界面
-- 所有平台能力都通过 adapter 隔离
-- 运动记录必须可离线创建和读取
-- 真实健康数据与演示数据必须明确区分
-- 每个端都要做 UI 走查，不以单一 iPhone 模拟器通过作为完成标准
+Movea source code is available under the [MIT License](LICENSE). Exercise illustrations derived from [Workout Guide](https://github.com/bryllim/workout-guide) are provided under [CC BY-SA 4.0](third_party/workout-guide/LICENSE-ASSETS). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for map and runtime attribution.
+
+<p align="center"><strong>Movea 0.1.0 · Trailhead / 起跑线</strong></p>

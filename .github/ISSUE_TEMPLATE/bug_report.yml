@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible problem in Movea
+title: '[Bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach real health exports, precise home routes, tokens, keys, or signing files.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - iPhone
+        - iPad
+        - macOS
+        - Android
+        - Apple Watch
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Movea version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: Tell us exactly how to reproduce the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized screenshots or logs
+      description: Remove personal health and location data before attaching evidence.
