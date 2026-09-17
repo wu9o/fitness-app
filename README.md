@@ -1,10 +1,39 @@
 # 动迹 Movea
 
-面向个人使用的多设备运动与健康记录应用。
+[![Flutter CI](https://github.com/wu9o/fitness-app/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/wu9o/fitness-app/actions/workflows/flutter-ci.yml)
+[![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Exercise assets: CC BY-SA 4.0](https://img.shields.io/badge/exercise%20assets-CC%20BY--SA%204.0-green.svg)](third_party/workout-guide/LICENSE-ASSETS)
+
+面向个人使用、本地优先的多设备运动与健康记录应用。项目当前处于 **Alpha** 阶段，欢迎体验、讨论和贡献，但尚不适合替代专业医疗或训练建议。
 
 Movea 记录跑步、骑行、拉伸、力量训练、睡眠和健康数据，目标是让同一套个人数据可以在 iPhone、iPad、Mac、Apple Watch 和 Android 之间自然流动。
 
 > 当前仓库正在从早期 SwiftUI 原型迁移到 Flutter 主应用 + 原生 Apple Watch 模块的跨平台架构。现有 SwiftUI 代码保留在 `legacy/swiftui-prototype`，用于对照原有交互和视觉稿。
+
+## 当前能力
+
+- 户外运动：跑步、骑行等运动的 GPS 记录、暂停恢复、配速和轨迹质量
+- 路线：MapLibre + OpenFreeMap 自定义运动地图、路线保存、跟随、偏航和转向提醒
+- 运动分析：全部记录、训练日历、周报、负荷趋势、心率曲线和个性化心率区间
+- 健身训练：302 个动作、906 帧演示、训练计划模板和训练中动作指导
+- 健康：HealthKit 运动与心率导入、睡眠详情、体重与恢复信息的统一入口
+- 数据安全：本地校验恢复、AES-256-GCM 加密导出与恢复，不在源码中保存账号密钥
+- 多设备：iPhone/iPad/macOS Flutter 应用，以及待接入正式 target 的原生 watchOS 模块
+
+## 快速开始
+
+环境要求：Flutter 3.47 或兼容的 stable 版本、Dart 3.3+；构建 Apple 平台还需要 Xcode。
+
+```bash
+git clone https://github.com/wu9o/fitness-app.git
+cd fitness-app/apps/movea
+flutter pub get
+flutter analyze
+flutter test
+flutter run
+```
+
+GPS 模拟、平台构建和设备验证见 [`docs/development.md`](docs/development.md) 与 [`docs/testing-gps.md`](docs/testing-gps.md)。
 
 ## 产品方向
 
@@ -103,6 +132,14 @@ fitness-app/
 - 下一阶段路线图：见 [`docs/roadmap.md`](docs/roadmap.md)，继续补充 Apple Watch 真机来源验证、路线音频/触觉和 GPS 稳定性验证，再推进多设备同步
 - Apple Watch：原生运动会话、实时指标和摘要补传源码已实现，尚待加入正式 watchOS target 并完成配对真机验证
 - GitHub 加密同步：已有概念验证，尚未作为正式数据层发布
+
+## 参与贡献
+
+问题反馈和代码贡献请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。安全问题请不要提交公开 Issue，处理方式见 [`SECURITY.md`](SECURITY.md)。
+
+## 许可证与第三方内容
+
+Movea 自有源代码以 [MIT License](LICENSE) 发布。动作插画来自 [Workout Guide](https://github.com/bryllim/workout-guide)，按 [CC BY-SA 4.0](third_party/workout-guide/LICENSE-ASSETS) 使用；其中部分作品源自 Everkinetic，完整署名和改动记录见 [`third_party/workout-guide`](third_party/workout-guide) 与动作 `manifest.json`。地图数据和运行时服务的署名见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 ## 开发原则
 

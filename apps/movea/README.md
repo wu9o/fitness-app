@@ -26,4 +26,4 @@ Apple Watch 不放在 Flutter app 内，见仓库根目录 `watchos/MoveaWatch` 
 `assets/exercises/manifest.json` 包含 302 个动作的元数据，`assets/exercises/` 包含
 906 帧透明 SVG 演示图。训练计划编辑器可以从动作库搜索并选入动作，计划详情和训练进行中
 都可以打开循环演示、动作步骤、呼吸节奏、常见错误和安全提示。原始数据的署名和许可证见
-`third_party/workout-guide/`。
+仓库根目录的 [`third_party/workout-guide/`](../../third_party/workout-guide/)。
