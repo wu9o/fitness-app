@@ -117,7 +117,7 @@ For simulator GPS playback and platform-specific checks, read [development.md](d
 - **Flutter CI** runs formatting, static analysis, and tests for the app and shared packages.
 - **App Builds** produces an Android debug APK plus iOS Simulator and macOS debug bundles.
 - **Preview Release** publishes persistent downloadable assets whenever a `v*` tag is pushed.
-- Release assets are development previews: a development-signed Android APK, an iOS Simulator bundle, and an unsigned macOS app. They are not App Store or Play Store packages.
+- Release assets are development previews: a development-signed Android Release APK, an iOS Simulator Debug bundle, and an unsigned macOS Release app. They are not App Store or Play Store packages.
 
 Download the latest preview from [GitHub Releases](https://github.com/wu9o/movea/releases). iOS device and store distribution will be added only after signing and provisioning are configured.
 

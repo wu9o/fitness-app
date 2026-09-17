@@ -7,7 +7,7 @@
 ### Added
 
 - 标签驱动的 GitHub Preview Release 流水线
-- Android、iOS Simulator 与 macOS 的持久化 Release 附件
+- Android Release、iOS Simulator Debug 与 macOS Release 的持久化版本附件
 - 中英文 README 中明确的构建类型、签名状态与下载说明
 
 ### Changed
